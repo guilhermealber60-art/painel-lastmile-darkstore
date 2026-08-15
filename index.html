@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Diário — Dark Store | Farmácias São João</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700;6..12,800;6..12,900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#16276e; --navy-deep:#0e1a4d; --navy-mid:#20359b;
+    --red:#e5192d; --gold:#e8960f; --green:#149a46; --green-soft:#e2f5e9;
+    --red-soft:#fde7e9; --gold-soft:#fdf1dc;
+    --bg:#eef1f8; --card:#ffffff; --ink:#1c2440; --muted:#6b7390;
+    --line:#dfe4f0; --radius:14px;
+    --shadow:0 2px 10px rgba(14,26,77,.08);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Nunito Sans',-apple-system,'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);min-height:100vh}
+
+  header.topbar{background:linear-gradient(90deg,var(--navy-deep),var(--navy) 55%,var(--navy-mid));color:#fff;padding:16px 24px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;border-bottom:4px solid var(--red)}
+  .brandmark{display:flex;flex-direction:column}
+  .brandmark .t1{font-weight:900;font-size:20px;letter-spacing:.5px;text-transform:uppercase}
+  .brandmark .t2{font-size:12px;font-weight:600;opacity:.85}
+  .daypill{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:999px;font-weight:800;font-size:13px}
+  .namebox{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .namebox label{font-size:11px;font-weight:800;text-transform:uppercase;opacity:.85}
+  .namebox input{border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.12);color:#fff;border-radius:10px;padding:8px 12px;font-family:inherit;font-weight:700;font-size:13px;width:160px}
+  .namebox input::placeholder{color:rgba(255,255,255,.6)}
+  .actions{display:flex;gap:8px;flex-wrap:wrap}
+  .btn{border:none;border-radius:10px;padding:9px 14px;font-family:inherit;font-weight:800;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:transform .12s ease, box-shadow .12s ease}
+  .btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.18)}
+  .btn:focus-visible{outline:3px solid #ffd34d;outline-offset:2px}
+  .btn-red{background:var(--red);color:#fff}
+  .btn-white{background:#fff;color:var(--navy)}
+  .btn-ghost{background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.35)}
+  .btn:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+
+  .statusbar{max-width:1420px;margin:14px auto 0;padding:0 24px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;font-weight:700;color:var(--muted)}
+  .statusbar .ok{color:var(--green)} .statusbar .warn{color:var(--gold)}
+  .sharenote{max-width:1420px;margin:8px auto 0;padding:0 24px;font-size:12px;font-weight:600;color:var(--muted)}
+
+  #loading,#empty{max-width:760px;margin:60px auto;text-align:center}
+  #loading{font-weight:800;color:var(--navy);font-size:16px}
+  #empty .zone{background:var(--card);border:2px dashed var(--navy-mid);border-radius:var(--radius);padding:52px 40px}
+  #empty h2{color:var(--navy);font-weight:900;font-size:22px;margin-bottom:8px}
+  #empty p{color:var(--muted);font-size:14px;line-height:1.6}
+  #empty .sheets{margin-top:14px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+  #empty .sheets span{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;color:var(--navy)}
+
+  main{max-width:1420px;margin:0 auto;padding:16px 24px 60px;display:none}
+  .filters{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:18px;position:relative}
+  .filters label{font-size:12px;font-weight:800;color:var(--navy);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:5px}
+  .filters select{font-family:inherit;font-weight:700;font-size:13px;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:#fff;min-width:170px}
+  .filters .count{margin-left:auto;font-size:13px;font-weight:700;color:var(--muted);padding-bottom:9px}
+
+  /* --- multi-select filters --- */
+  .msfilter{position:relative;display:flex;flex-direction:column}
+  .ms-btn{font-family:inherit;font-weight:700;font-size:13px;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px 30px 8px 12px;background:#fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%236b7390'/></svg>") no-repeat right 12px center;min-width:190px;text-align:left;cursor:pointer;transition:border-color .12s}
+  .ms-btn:hover{border-color:var(--navy-mid)}
+  .ms-btn.has-sel{border-color:var(--navy-mid);background-color:#eef1fb;color:var(--navy);font-weight:800}
+  .ms-panel{display:none;position:absolute;top:calc(100% + 6px);left:0;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px rgba(14,26,77,.16);padding:6px;min-width:230px;max-height:280px;overflow:auto;z-index:30}
+  .ms-panel.open{display:block}
+  .ms-panel label{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:var(--ink);text-transform:none;letter-spacing:0;padding:6px 8px;border-radius:8px;cursor:pointer;margin:0}
+  .ms-panel label:hover{background:var(--bg)}
+  .ms-panel input[type=checkbox]{width:15px;height:15px;accent-color:var(--navy-mid);cursor:pointer;flex:none}
+  .ms-empty{padding:10px 8px;font-size:12px;color:var(--muted);font-weight:600}
+  .ms-actions{display:flex;gap:6px;padding:2px 4px 8px;margin-bottom:4px;border-bottom:1px solid var(--line)}
+  .ms-actions button{flex:1;font-size:11px;font-weight:800;border:1px solid var(--line);background:#f7f8fc;border-radius:7px;padding:6px 4px;cursor:pointer;color:var(--navy);font-family:inherit}
+  .ms-actions button:hover{background:#e7ecfb}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin-bottom:20px}
+  .kpi{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px;border-top:4px solid var(--navy)}
+  .kpi .lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  .kpi .val{font-size:28px;font-weight:900;color:var(--navy);line-height:1.15;margin-top:4px}
+  .kpi .sub{font-size:11px;color:var(--muted);font-weight:600;margin-top:2px}
+  .kpi.good{border-top-color:var(--green)} .kpi.good .val{color:var(--green)}
+  .kpi.bad{border-top-color:var(--red)} .kpi.bad .val{color:var(--red)}
+  .kpi.warn{border-top-color:var(--gold)} .kpi.warn .val{color:var(--gold)}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+  @media(max-width:980px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+  .card .head{background:var(--navy);color:#fff;font-weight:900;font-size:14px;text-transform:uppercase;letter-spacing:.4px;padding:11px 18px;display:flex;align-items:center;gap:10px}
+  .card .head.gold{background:var(--gold)} .card .head.green{background:var(--green)} .card .head.red{background:var(--red)}
+  .head-select{margin-left:auto;font-family:inherit;font-weight:800;font-size:12px;color:var(--navy);background:#fff;border:none;border-radius:8px;padding:6px 10px;cursor:pointer;max-width:220px}
+  .card .body{padding:16px 18px}
+  .chartwrap{position:relative;height:280px}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:#f2f4fb;color:var(--navy);text-transform:uppercase;font-size:11px;letter-spacing:.4px;font-weight:800;padding:9px 10px;text-align:left;border-bottom:2px solid var(--line);white-space:nowrap}
+  td{padding:8px 10px;border-bottom:1px solid var(--line);font-weight:600}
+  tr:last-child td{border-bottom:none}
+  tr.total td{background:#f6f8fd;font-weight:900;color:var(--navy)}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .ns{font-weight:900;padding:2px 10px;border-radius:999px;display:inline-block;min-width:52px;text-align:center}
+  .ns.g{background:var(--green-soft);color:var(--green)}
+  .ns.y{background:var(--gold-soft);color:var(--gold)}
+  .ns.r{background:var(--red-soft);color:var(--red)}
+  .pill{font-weight:800;padding:2px 10px;border-radius:999px;font-size:12px;display:inline-block}
+  .pill.prazo{background:var(--green-soft);color:var(--green)}
+  .pill.atraso{background:var(--red-soft);color:var(--red)}
+  .pill.insu{background:#ececf2;color:#555}
+  .pill.rota{background:#e3ecfd;color:var(--navy-mid)}
+
+  .tbl-scroll{max-height:420px;overflow:auto}
+  .tbl-scroll thead th{position:sticky;top:0;z-index:1}
+  .diag input{width:100%;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-family:inherit;font-size:12px;font-weight:600;background:#fbfcff}
+  .diag input:focus{outline:2px solid var(--navy-mid)}
+  .diag select{width:100%;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-family:inherit;font-size:12px;font-weight:700;background:#fbfcff;color:var(--ink);cursor:pointer}
+  .diag select:focus{outline:2px solid var(--navy-mid)}
+  .diag .autor{font-size:11px;color:var(--muted);font-weight:700;white-space:nowrap}
+  .savestate{font-size:12px;font-weight:800;margin-left:auto}
+  .savestate.saving{color:#ffd34d}.savestate.saved{color:#bff3cf}
+
+  footer{max-width:1420px;margin:0 auto;padding:0 24px 40px;color:var(--muted);font-size:12px;font-weight:600;display:none}
+  @media(prefers-reduced-motion:reduce){.btn{transition:none}}
+
+  /* --- dialogs (Atualizar dados / Configurar publicação) --- */
+  dialog{border:1px solid var(--line);border-radius:var(--radius);padding:0;box-shadow:0 20px 60px rgba(14,26,77,.35);width:min(640px,92vw);font-family:inherit;color:var(--ink);background:var(--card)}
+  dialog::backdrop{background:rgba(14,26,77,.55)}
+  .dlg-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center}
+  .dlg-head h3{margin:0;font-size:15px;color:var(--navy);font-weight:900}
+  .dlg-head button{margin-left:auto;border:0;background:none;font-size:20px;cursor:pointer;color:var(--muted)}
+  .dlg-body{padding:18px 20px;max-height:70vh;overflow:auto}
+  .dlg-foot{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+  .field-row{display:flex;flex-direction:column;gap:4px;margin-bottom:14px}
+  .field-row label{font-size:12px;font-weight:800;color:var(--navy)}
+  .field-row input[type=file],.field-row input[type=password]{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;background:#fbfcff;color:var(--ink)}
+  .dlgbtn{border:0;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit}
+  .dlgbtn-primary{background:var(--navy);color:#fff}
+  .dlgbtn-primary:hover{filter:brightness(1.15)}
+  .dlgbtn-danger{background:var(--red-soft);color:var(--red)}
+  .dlgbtn-ghost{background:var(--bg);color:var(--ink)}
+  .dlgbtn:disabled{opacity:.5;cursor:not-allowed}
+  .log-box{background:#101632;color:#c9ceec;font-family:ui-monospace,'JetBrains Mono',monospace;font-size:11.5px;padding:10px;border-radius:8px;max-height:140px;overflow:auto;white-space:pre-wrap;margin-top:10px;border:1px solid #232849}
+  .summary-line{font-size:12.5px;color:var(--ink);margin:4px 0}
+  .summary-line b{color:var(--navy)}
+  details.settings{margin-top:16px;border-top:1px dashed var(--line);padding-top:12px}
+  details.settings summary{cursor:pointer;font-weight:800;font-size:12.5px;color:var(--ink)}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:4px}
+  .toast{position:fixed;bottom:24px;right:24px;z-index:200;background:var(--green);color:#fff;padding:13px 20px;border-radius:10px;box-shadow:var(--shadow);font-size:13px;font-weight:800;max-width:340px;opacity:0;transform:translateY(10px);transition:opacity .25s ease,transform .25s ease;pointer-events:none}
+  .toast.show{opacity:1;transform:translateY(0)}
+  .toast.error{background:var(--red)}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brandmark">
+    <span class="t1">Acompanhamento Diário &mdash; Dark Store</span>
+    <span class="t2">Last Mile &bull; Farmácias São João &bull; painel publicado no GitHub Pages</span>
+  </div>
+  <span class="daypill" id="daypill">Carregando…</span>
+  <div class="namebox">
+    <label for="myName">Seu nome</label>
+    <input id="myName" placeholder="ex.: Gabrielle" maxlength="40">
+  </div>
+  <div class="actions">
+    <button class="btn btn-ghost" id="btnUpload">📂 Atualizar dados</button>
+    <button class="btn btn-ghost" id="btnReload">🔄 Recarregar</button>
+    <button class="btn btn-white" id="btnPublish">Publicar (snapshot)</button>
+    <button class="btn btn-ghost" id="btnConfig" title="Configurar publicação direta no GitHub">⚙️</button>
+    <button class="btn btn-white" id="btnXlsx" disabled>⬇️ Excel</button>
+    <button class="btn btn-red" id="btnPng" disabled>🖼️ Imagem</button>
+  </div>
+</header>
+
+<div class="statusbar" id="statusbar"></div>
+<div class="sharenote">🔗 Painel publicado no GitHub Pages: assim que alguém clica em "Publicar", os dados e diagnósticos ficam visíveis para todos com o link. 🔒 Privacidade: as planilhas brutas (Orders/Report) são processadas apenas no navegador de quem as carrega — <strong>nenhum dado de cliente (nome, endereço, contato) é salvo ou compartilhado</strong>, somente indicadores operacionais (pedido, modalidade, plataforma, entregador e horários das etapas).</div>
+
+<div id="loading">⏳ Buscando dados publicados…</div>
+
+<div id="empty" style="display:none">
+  <div class="zone">
+    <h2>Nenhuma base publicada ainda</h2>
+    <p>Clique em <strong>"Atualizar dados"</strong> para importar as bases &mdash; pode ser <strong>de um dia só ou do mês inteiro</strong>, o dashboard identifica as datas automaticamente. São as mesmas duas bases do painel da rede, aqui referentes só à <strong>Dark Store</strong>:<br>
+    <strong>Orders (Abbiamo)</strong> e <strong>Report (VTEX)</strong>.<br>
+    Depois de carregado, use o filtro <strong>Data</strong> para ver um ou mais dias específicos, ou deixe em branco para o mês acumulado.<br>
+    <small style="color:var(--muted)">🔒 O arquivo bruto não é enviado a lugar nenhum: o processamento acontece aqui no seu navegador. Depois de processar, clique em <strong>Publicar</strong> para tornar os indicadores operacionais visíveis a todos com o link.</small></p>
+    <div class="sheets"><span>Orders (Abbiamo)</span><span>Report (VTEX)</span></div>
+    <button class="btn btn-red" id="btnEmptyUpload" style="margin-top:18px">📂 Atualizar dados</button>
+  </div>
+</div>
+
+<main id="dash">
+  <div class="filters">
+    <div class="msfilter">
+      <label>Data</label>
+      <button type="button" class="ms-btn" id="msDataBtn">📅 Mês inteiro (acumulado)</button>
+      <div class="ms-panel" id="msDataPanel"></div>
+    </div>
+    <div class="msfilter">
+      <label>Semana do ano</label>
+      <button type="button" class="ms-btn" id="msSemanaBtn">Todas as semanas</button>
+      <div class="ms-panel" id="msSemanaPanel"></div>
+    </div>
+    <div class="msfilter">
+      <label>Turno</label>
+      <button type="button" class="ms-btn" id="msTurnoBtn">Todos</button>
+      <div class="ms-panel" id="msTurnoPanel"></div>
+    </div>
+    <div class="msfilter">
+      <label>Modalidade</label>
+      <button type="button" class="ms-btn" id="msModBtn">Todas</button>
+      <div class="ms-panel" id="msModPanel"></div>
+    </div>
+    <div class="msfilter">
+      <label>Plataforma</label>
+      <button type="button" class="ms-btn" id="msPlatBtn">Todas</button>
+      <div class="ms-panel" id="msPlatPanel"></div>
+    </div>
+    <span class="count" id="rowCount"></span>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="head">Nível de serviço por modalidade</div>
+      <div class="body"><table id="tblNS"></table></div>
+    </div>
+    <div class="card">
+      <div class="head">Evolução semanal — OTD e Separação (Entrega Rápida Uber)
+        <select id="chSemanaWeekSel" class="head-select"></select>
+      </div>
+      <div class="body"><div class="chartwrap"><canvas id="chSemana"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="head gold">Tempo médio por etapa do processo</div>
+      <div class="body">
+        <table id="tblTempos"></table>
+        <div class="chartwrap" style="margin-top:14px;height:230px"><canvas id="chTempos"></canvas></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="head green">Separação por turno</div>
+      <div class="body">
+        <table id="tblTurno"></table>
+        <div class="chartwrap" style="margin-top:14px;height:230px"><canvas id="chTurno"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="head red">Diagnóstico &mdash; Pedidos entregues com atraso (edição colaborativa)
+      <span class="savestate" id="saveState"></span>
+      <button class="btn btn-white" id="btnDiag" style="padding:6px 12px;font-size:12px">⬇️ Exportar diagnóstico</button>
+    </div>
+    <div class="body tbl-scroll diag"><table id="tblAtrasos"></table></div>
+  </div>
+
+  <div class="card">
+    <div class="head">Base de pedidos (calculada)</div>
+    <div class="body tbl-scroll"><table id="tblBase"></table></div>
+  </div>
+</main>
+
+<footer id="foot">Meta de NS da rede: 95% &bull; Meta de separação: 15 min &bull; Coleta via eventos DISPATCHED (SAOJOAO-GO) e IN_TRANSIT (Uber/99), lidos direto das colunas de evento do Orders (Abbiamo) &bull; SLA = No prazo ÷ Entregues &bull; DS = Entregues ÷ (Entregues + Insucessos) &bull; O gráfico de evolução semanal usa filtro de semana próprio (seletor no card, por padrão a semana vigente, segunda a domingo) e a barra de separação mostra apenas Entrega Rápida (Uber), independente do filtro de Data/Semana geral &bull; Diagnósticos publicados no GitHub e sincronizados entre todos os usuários a cada atualização &bull; Filtros aceitam múltiplas seleções simultâneas &bull; O dia do pedido (filtros de Data e Semana, e as colunas "Data") considera a data de criação no Orders (Abbiamo) — pedidos com data diferente no Report (VTEX) aparecem no dia do Orders &bull; Bases: Orders (Abbiamo) e Report (VTEX), acumuladas ao longo do mês a cada "Atualizar dados" + "Publicar"</footer>
+
+<dialog id="dlgUpdate">
+  <div class="dlg-head"><h3>Atualizar dados — Dark Store</h3><button data-close>×</button></div>
+  <div class="dlg-body">
+    <p style="font-size:12px;color:var(--muted);margin:0 0 14px;line-height:1.6">
+      Dois passos separados: <strong style="color:var(--ink)">1) Processar arquivos</strong> (aqui) lê as bases e já atualiza o painel <strong style="color:var(--ink)">só neste navegador</strong>. <strong style="color:var(--ink)">2) Publicar</strong> — feche este diálogo e clique em <strong>Publicar</strong> lá em cima. É isso que torna os dados visíveis para qualquer pessoa que abrir o link. São as mesmas bases <strong>Orders (Abbiamo)</strong> e <strong>Report (VTEX)</strong> do painel da rede, aqui referentes só à Dark Store.
+    </p>
+    <div class="field-row">
+      <label>Orders (Abbiamo) — CSV</label>
+      <input type="file" id="fileOrders" accept=".csv,.xlsx,.xlsm">
+      <div class="hint">Colunas esperadas: order_number (ou order_external_id), order_status, order_created_at, order_promised_delivery_date, order_delivery_date (ou order_delivered_delivery_date), order_last_delivery_carrier_name, order_last_delivery_driver_name, order_last_dispatched_event_date, order_last_in_transit_event_date.</div>
+    </div>
+    <div class="field-row">
+      <label>Report (VTEX) — CSV</label>
+      <input type="file" id="fileReport" accept=".csv,.xlsx,.xlsm">
+      <div class="hint">Colunas esperadas: Order, Creation Date, Courrier (mesmo arquivo Report do VTEX usado hoje).</div>
+    </div>
+    <button class="dlgbtn dlgbtn-primary" id="btnProcessFiles">Processar e aplicar ao painel</button>
+    <div class="log-box" id="updateLog" style="display:none"></div>
+
+    <div id="pendingSummary" style="display:none;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+      <div class="summary-line">Pedidos (Orders) acumulados neste navegador: <b id="pendOrdersCount">0</b></div>
+      <div class="summary-line">Pedidos Report (VTEX, dedup por Order) acumulados: <b id="pendReportCount">0</b></div>
+    </div>
+
+    <div style="margin-top:16px;padding:12px;border:1px solid var(--navy-mid);border-radius:10px;background:#eef1fb">
+      <div style="font-weight:900;font-size:12.5px;color:var(--navy);margin-bottom:6px">Passo 2 — Publicar para todo mundo</div>
+      <div style="font-size:11.5px;color:var(--ink);line-height:1.6">
+        Depois de processar, feche este diálogo e clique em <strong>Publicar</strong> na barra de cima.
+        Se você já configurou o token (botão ⚙️), a publicação vai direto pro GitHub; se não, o botão baixa os arquivos .gz
+        para você subir manualmente na pasta <code>data/</code> do repositório.
+      </div>
+    </div>
+
+    <details class="settings">
+      <summary>Apagar acumulado (virada de mês)</summary>
+      <div style="margin-top:10px">
+        <button class="dlgbtn dlgbtn-danger" id="btnWipeAccum">Apagar acumulado</button>
+      </div>
+    </details>
+  </div>
+  <div class="dlg-foot"><button class="dlgbtn dlgbtn-ghost" data-close>Fechar</button></div>
+</dialog>
+
+<dialog id="dlgConfig">
+  <div class="dlg-head"><h3>Publicar direto no GitHub</h3><button data-close>×</button></div>
+  <div class="dlg-body">
+    <p style="font-size:12px;color:var(--ink);margin:0 0 12px;line-height:1.6">
+      Com um token configurado, o botão <strong>Publicar</strong> envia <code>data/orders.json.gz</code>, <code>data/report.json.gz</code> e
+      <code>data/meta.json</code> direto para o repositório <code id="cfgRepoName">guilhermealber60-art/painel-lastmile-darkstore</code> —
+      sem baixar arquivo, sem git, sem terminal. O mesmo token também publica o diagnóstico de atrasos (<code>data/diagnostico.json</code>).
+    </p>
+    <div style="padding:10px 12px;border:1px solid var(--red);border-radius:10px;background:var(--red-soft);font-size:11.5px;color:var(--ink);line-height:1.6;margin-bottom:14px">
+      <strong>Segurança:</strong> o token fica salvo só neste navegador (não é enviado a mim nem a ninguém além do GitHub).
+      Crie um <strong>fine-grained token</strong> em <strong>github.com/settings/tokens</strong>, restrito ao repositório
+      <strong>painel-lastmile-darkstore</strong>, com permissão apenas de <strong>Contents: Read and write</strong>, e defina uma expiração.
+      Se trocar de computador ou navegador, precisa configurar de novo.
+    </div>
+    <div class="field-row">
+      <label>Token de acesso (GitHub)</label>
+      <input type="password" id="cfgToken" placeholder="github_pat_…">
+    </div>
+  </div>
+  <div class="dlg-foot">
+    <button class="dlgbtn dlgbtn-danger" id="btnRemoveToken" style="margin-right:auto">Remover token deste navegador</button>
+    <button class="dlgbtn dlgbtn-ghost" data-close>Fechar</button>
+    <button class="dlgbtn dlgbtn-primary" id="btnSaveToken">Salvar</button>
+  </div>
+</dialog>
+
+<script>
+'use strict';
+window.addEventListener('load',()=>{
+  const faltando=[];
+  if(typeof Papa==='undefined') faltando.push('PapaParse');
+  if(typeof XLSX==='undefined') faltando.push('SheetJS');
+  if(typeof Chart==='undefined') faltando.push('Chart.js');
+  if(typeof html2canvas==='undefined') faltando.push('html2canvas');
+  if(faltando.length){
+    const d=document.createElement('div');
+    d.style.cssText='max-width:760px;margin:24px auto;background:#fde7e9;border:2px solid #e5192d;border-radius:14px;padding:20px 24px;font-weight:700;color:#8a0f1c;line-height:1.6';
+    d.innerHTML='⚠️ <strong>Não foi possível carregar as bibliotecas ('+faltando.join(', ')+').</strong><br>Verifique a conexão com a internet e recarregue a página (F5).';
+    document.body.insertBefore(d, document.getElementById('loading'));
+  }
+});
+
+const $ = s => document.querySelector(s);
+
+/* =====================================================================
+   CONFIGURAÇÃO DO REPOSITÓRIO DE PUBLICAÇÃO
+   Repositório de publicação fixo — só o token é configurável pelo usuário
+   (mesmo esquema do painel da rede: guilhermealber60-art/painel-lastmile-saojoao).
+===================================================================== */
+const GH_OWNER = 'guilhermealber60-art';
+const GH_REPO  = 'painel-lastmile-darkstore';
+const GH_BRANCH = 'main';
+
+const LS_KEYS = {
+  pendingOrders:'ds_pending_orders', pendingReport:'ds_pending_report', pendingDiag:'ds_pending_diag',
+  ghToken:'ds_gh_token',
+};
+
+const state = { orders:[], report:[] }; // acumulados (mergeados por chave) — ver pickOrderRows/pickReportRows
+let BASE=[], FILTERED=[], charts={}, META={ref:null,updatedAt:null,updatedBy:null};
+let SEMANA_CHART_WEEK=null; // semana escolhida no seletor do gráfico "Evolução semanal" (null = semana vigente)
+let DIAG={};           // pedido -> {motivo,plano,autor,ts}
+let pollTimer=null, saveTimer=null;
+
+/* ---------- filtros multi-seleção ---------- */
+const MS={data:new Set(),semana:new Set(),turno:new Set(),mod:new Set(),plat:new Set()};
+const MS_OPTIONS={data:[],semana:[],turno:[{value:'1º turno',label:'1º turno'},{value:'2º turno',label:'2º turno'}],mod:[],plat:[]};
+const MS_ALLLABEL={data:'📅 Mês inteiro (acumulado)',semana:'Todas as semanas',turno:'Todos',mod:'Todas',plat:'Todas'};
+
+/* Semana do ano (padrão ISO 8601, igual ao ISOWEEKNUM do Excel/Sheets): semana começa na
+   segunda-feira e a semana 1 é a que contém a primeira quinta-feira do ano. Assim, exportando
+   uma base de vários meses, dá pra filtrar por ex. "Semana 35" e ver todos os pedidos daquela
+   semana, independente do mês. */
+function isoWeekInfo(d){
+  const dt=new Date(d.getFullYear(),d.getMonth(),d.getDate());
+  const dayNum=(dt.getDay()+6)%7; // 0=segunda ... 6=domingo
+  dt.setDate(dt.getDate()-dayNum+3); // quinta-feira da semana atual
+  const firstThursday=new Date(dt.getFullYear(),0,4);
+  const firstDayNum=(firstThursday.getDay()+6)%7;
+  firstThursday.setDate(firstThursday.getDate()-firstDayNum+3);
+  const week=1+Math.round((dt-firstThursday)/(7*86400000));
+  return {week,year:dt.getFullYear()};
+}
+function isoWeekMonday(year,week){
+  const jan4=new Date(year,0,4);
+  const jan4Day=(jan4.getDay()+6)%7;
+  const week1Monday=new Date(year,0,4-jan4Day);
+  return new Date(week1Monday.getFullYear(),week1Monday.getMonth(),week1Monday.getDate()+(week-1)*7);
+}
+/* Data de referência do pedido para agrupamentos por dia/semana: prioriza a data de criação
+   no Orders/Abbiamo (quando o cliente agenda a entrega para outro dia, é o Orders que reflete o dia
+   correto), caindo para a data do Report/VTEX apenas se o Orders não existir. */
+function rowWeekKey(r){
+  const d=r.criadoAbb||r.criadoVtex;
+  if(!(d instanceof Date)||isNaN(d)) return null;
+  const info=isoWeekInfo(d);
+  return info.year+'-W'+String(info.week).padStart(2,'0');
+}
+function refreshSemanaMultiSelect(){
+  const counts={};
+  BASE.forEach(r=>{ const k=rowWeekKey(r); if(k) counts[k]=(counts[k]||0)+1; });
+  const keys=Object.keys(counts).sort();
+  const fmt=d=>String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');
+  MS_OPTIONS.semana=keys.map(k=>{
+    const [y,w]=k.split('-W'); const week=parseInt(w,10), year=parseInt(y,10);
+    const mon=isoWeekMonday(year,week);
+    const sun=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+6);
+    return {value:k,label:'Semana '+week+' • '+fmt(mon)+'–'+fmt(sun)+' ('+counts[k]+' pedidos)'};
+  });
+  MS.semana=new Set([...MS.semana].filter(v=>keys.includes(v)));
+  buildMultiSelect('semana','#msSemanaBtn','#msSemanaPanel');
+}
+function refreshChSemanaWeekSelect(){
+  const sel=$('#chSemanaWeekSel');
+  const counts={};
+  BASE.forEach(r=>{ const k=rowWeekKey(r); if(k) counts[k]=(counts[k]||0)+1; });
+  const keys=Object.keys(counts).sort();
+  const curInfo=isoWeekInfo(new Date());
+  const curKey=curInfo.year+'-W'+String(curInfo.week).padStart(2,'0');
+  const fmt=d=>String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');
+  if(!keys.length){ sel.innerHTML='<option value="">Sem dados</option>'; SEMANA_CHART_WEEK=null; return; }
+  const opts=keys.map(k=>{
+    const [y,w]=k.split('-W'); const week=parseInt(w,10), year=parseInt(y,10);
+    const mon=isoWeekMonday(year,week);
+    const sun=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+6);
+    const label=(k===curKey?'▶ Vigente — ':'')+'Semana '+week+' • '+fmt(mon)+'–'+fmt(sun);
+    return {value:k,label};
+  });
+  if(SEMANA_CHART_WEEK&&!keys.includes(SEMANA_CHART_WEEK)) SEMANA_CHART_WEEK=null;
+  const selected=SEMANA_CHART_WEEK||(keys.includes(curKey)?curKey:keys[keys.length-1]);
+  sel.innerHTML=opts.map(o=>`<option value="${o.value}"${o.value===selected?' selected':''}>${o.label}</option>`).join('');
+  SEMANA_CHART_WEEK=selected;
+}
+
+function buildMultiSelect(key,btnSel,panelSel){
+  const panel=$(panelSel), btn=$(btnSel);
+  const opts=MS_OPTIONS[key];
+  const actions=`<div class="ms-actions"><button type="button" data-act="all">Marcar todas</button><button type="button" data-act="none">Limpar</button></div>`;
+  panel.innerHTML = opts.length
+    ? actions + opts.map(o=>`<label><input type="checkbox" value="${esc(o.value)}"${MS[key].has(o.value)?' checked':''}> ${esc(o.label)}</label>`).join('')
+    : `<div class="ms-empty">Nenhuma opção disponível</div>`;
+  panel.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+    cb.addEventListener('change',()=>{
+      if(cb.checked) MS[key].add(cb.value); else MS[key].delete(cb.value);
+      updateMsButton(key,btnSel); render();
+    });
+  });
+  const bAll=panel.querySelector('[data-act="all"]'), bNone=panel.querySelector('[data-act="none"]');
+  if(bAll) bAll.addEventListener('click',()=>{
+    panel.querySelectorAll('input[type=checkbox]').forEach(cb=>{cb.checked=true;MS[key].add(cb.value);});
+    updateMsButton(key,btnSel); render();
+  });
+  if(bNone) bNone.addEventListener('click',()=>{
+    panel.querySelectorAll('input[type=checkbox]').forEach(cb=>{cb.checked=false;});
+    MS[key].clear();
+    updateMsButton(key,btnSel); render();
+  });
+  updateMsButton(key,btnSel);
+}
+function updateMsButton(key,btnSel){
+  const set=MS[key], opts=MS_OPTIONS[key], btn=$(btnSel);
+  if(set.size===0){ btn.textContent=MS_ALLLABEL[key]; btn.classList.remove('has-sel'); return; }
+  btn.classList.add('has-sel');
+  if(set.size===1){
+    const o=opts.find(o=>o.value===[...set][0]);
+    btn.textContent='✓ '+(o?o.label:[...set][0]);
+    return;
+  }
+  btn.textContent='✓ '+set.size+' selecionados';
+}
+function refreshDateMultiSelect(){
+  const counts={};
+  BASE.forEach(r=>{ const k=rowDateKey(r); if(k) counts[k]=(counts[k]||0)+1; });
+  const keys=Object.keys(counts).sort();
+  MS_OPTIONS.data=keys.map(k=>{ const [y,m,d]=k.split('-'); return {value:k,label:d+'/'+m+' ('+counts[k]+' pedidos)'}; });
+  MS.data=new Set([...MS.data].filter(v=>keys.includes(v)));
+  buildMultiSelect('data','#msDataBtn','#msDataPanel');
+}
+function refreshModPlatMultiSelects(){
+  const mods=[...new Set(BASE.map(r=>r.modalidade))].sort();
+  const plats=[...new Set(BASE.map(r=>r.plataforma))].sort();
+  MS_OPTIONS.mod=mods.map(m=>({value:m,label:m}));
+  MS_OPTIONS.plat=plats.map(p=>({value:p,label:p}));
+  MS.mod=new Set([...MS.mod].filter(v=>mods.includes(v)));
+  MS.plat=new Set([...MS.plat].filter(v=>plats.includes(v)));
+  buildMultiSelect('mod','#msModBtn','#msModPanel');
+  buildMultiSelect('plat','#msPlatBtn','#msPlatPanel');
+}
+function initFilterDropdowns(){
+  buildMultiSelect('turno','#msTurnoBtn','#msTurnoPanel');
+  document.querySelectorAll('.ms-btn').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const panel=btn.nextElementSibling;
+      const isOpen=panel.classList.contains('open');
+      document.querySelectorAll('.ms-panel.open').forEach(p=>p.classList.remove('open'));
+      if(!isOpen) panel.classList.add('open');
+    });
+  });
+  document.querySelectorAll('.ms-panel').forEach(p=>p.addEventListener('click',e=>e.stopPropagation()));
+  document.addEventListener('click',()=>{ document.querySelectorAll('.ms-panel.open').forEach(p=>p.classList.remove('open')); });
+}
+
+/* ---------- utilidades ---------- */
+const MIN15=15*60000;
+function fmtDur(ms){ if(ms==null||isNaN(ms)||ms<0) return '—'; const s=Math.round(ms/1000),h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60; return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0'); }
+function fmtDT(d){ if(!(d instanceof Date)||isNaN(d)) return '—'; return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
+function pct(n,d){ return d>0?Math.round(100*n/d)+'%':'—'; }
+function pctNum(n,d){ return d>0?100*n/d:null; }
+function nsClass(p){ return p==null?'':(p>=95?'g':(p>=70?'y':'r')); }
+function avg(arr){ const v=arr.filter(x=>x!=null&&!isNaN(x)&&x>=0); return v.length? v.reduce((a,b)=>a+b,0)/v.length:null; }
+function esc(s){ return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+/* As datas do Orders/Report vêm em formatos mistos: dd/mm/yyyy hh:mm (BR) e
+   yyyy-mm-dd hh:mm:ss (ISO), como texto (CSV) — ou já como Date/serial quando o
+   arquivo é .xlsx (SheetJS com cellDates:true resolve isso antes de chegar aqui). */
+function parseBRDate(s){
+  const m=/(\d{2})\/(\d{2})\/(\d{4})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(s));
+  if(!m) return null;
+  const d=new Date(+m[3], +m[2]-1, +m[1], +m[4], +m[5], +(m[6]||0));
+  return isNaN(d)?null:d;
+}
+function parseISODate(s){
+  const clean=String(s).trim().replace(/Z$/,'');
+  const m=/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(clean);
+  if(!m) return null;
+  const d=new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +m[6]);
+  return isNaN(d)?null:d;
+}
+function toDate(v){
+  if(v==null||v==='') return null;
+  if(v instanceof Date) return isNaN(v)?null:v;
+  if(typeof v==='number'){
+    if(typeof XLSX!=='undefined'){ const d=XLSX.SSF.parse_date_code(v); if(d) return new Date(d.y,d.m-1,d.d,d.H,d.M,Math.round(d.S)); }
+    return null;
+  }
+  return parseBRDate(v) || parseISODate(v) || (()=>{ const d=new Date(v); return isNaN(d)?null:d; })();
+}
+function myName(){ return ($('#myName').value||'').trim(); }
+function dateKey(d){ if(!(d instanceof Date)||isNaN(d)) return null; return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+/* Data de referência do pedido para o dia exibido: prioriza a criação no Orders/Abbiamo (é ele que
+   reflete o dia em que o pedido de fato deve aparecer, mesmo quando foi criado no Report num
+   dia anterior mas agendado/criado no Orders para hoje). Cai para o Report só se não houver
+   data no Orders. */
+function rowDateKey(r){ return dateKey(r.criadoAbb||r.criadoVtex); }
+function rowDateLabel(r){ const d=r.criadoAbb||r.criadoVtex; return d?d.toLocaleDateString('pt-BR'):'—'; }
+function rangeLabel(rows){
+  const keys=[...new Set(rows.map(r=>dateKey(r.criadoAbb||r.criadoVtex)).filter(Boolean))].sort();
+  if(!keys.length) return null;
+  const fmt=k=>{const [y,m,d]=k.split('-');return d+'/'+m+'/'+y;};
+  if(keys.length===1) return fmt(keys[0]);
+  return fmt(keys[0])+' a '+fmt(keys[keys.length-1])+' ('+keys.length+' dias)';
+}
+
+/* =====================================================================
+   LEITURA DAS BASES (Orders/Abbiamo + Report/VTEX) — mesmo esquema de
+   colunas do painel da rede, aqui só aplicado à Dark Store.
+===================================================================== */
+function pickOrderRows(rows){
+  return rows.map(r=>({
+    on:String(r.order_number ?? r.order_external_id ?? '').trim(),
+    os:r.order_status,
+    carrier:r.order_last_delivery_carrier_name,
+    driver:r.order_last_delivery_driver_name,
+    createdAt:r.order_created_at,
+    promised:r.order_promised_delivery_date,
+    delivered:r.order_delivered_delivery_date ?? r.order_delivery_date,
+    processedAt:r.order_seller_processed_at,
+    evDispatched:r.order_last_dispatched_event_date,
+    evInTransit:r.order_last_in_transit_event_date,
+  })).filter(r=>r.on);
+}
+/* Autodetecção de colunas do Report (Order/Creation Date/Courrier), tolerante a
+   pequenas variações de nome — mesma heurística que a versão anterior usava. */
+function pickReportRows(rows){
+  if(!rows.length) return [];
+  const keys=Object.keys(rows[0]);
+  const orderKey = keys.find(k=>/^order$/i.test(k.trim())) || keys[0];
+  const creationKey = keys.find(k=>/creation date/i.test(k)) || keys.find(k=>/data.*cria/i.test(k));
+  const courrierKey = keys.find(k=>/courrier/i.test(k)) || keys.find(k=>/sla type/i.test(k));
+  return rows.map(r=>({
+    order:String(r[orderKey]??'').trim(),
+    creation:creationKey?r[creationKey]:null,
+    courrier:courrierKey?r[courrierKey]:null,
+  })).filter(r=>r.order);
+}
+function dedupeReportByOrder(rows){
+  const m=new Map();
+  for(const r of rows){ if(!m.has(r.order)) m.set(r.order,r); }
+  return [...m.values()];
+}
+function mergeByKey(existing, incoming, keyFn){
+  const m=new Map(existing.map(r=>[keyFn(r),r]));
+  for(const r of incoming) m.set(keyFn(r),r);
+  return [...m.values()];
+}
+
+/* ---------- cálculo (regras idênticas às do painel original da Dark Store) ---------- */
+function computeBase(orders, reportByOrder){
+  return orders.map(o=>{
+    const pedido=o.on;
+    const rep=reportByOrder.get(pedido)||null;
+    const criadoVtex=(rep&&toDate(rep.creation))||toDate(o.processedAt);
+    const criadoAbb=toDate(o.createdAt);
+    const prazo=toDate(o.promised);
+    const entrega=toDate(o.delivered);
+    const status=o.os||'';
+    const plataforma=o.carrier||'Não Identificado';
+    const entreguePor=o.driver||'Não Identificado';
+    const modalidade=(rep&&rep.courrier)||'Não Identificado';
+    let turno='—';
+    if(criadoVtex){ turno=(criadoVtex.getHours()*60+criadoVtex.getMinutes())<(15*60+30)?'1º turno':'2º turno'; }
+    let coletado=null,sedex=false;
+    if(modalidade==='Entrega Padrão (SEDEX)'){ sedex=true; }
+    else{
+      if(plataforma==='SAOJOAO-GO'){ coletado=toDate(o.evDispatched); }
+      else if(plataforma==='UBER'||plataforma==='99-ENTREGAS'){ coletado=toDate(o.evInTransit); }
+    }
+    const sep=(criadoAbb&&criadoVtex)?criadoAbb-criadoVtex:null;
+    const aguard=(coletado&&criadoAbb)?coletado-criadoAbb:null;
+    const tEnt=(entrega&&coletado)?entrega-coletado:null;
+    const tTot=(entrega&&criadoVtex)?entrega-criadoVtex:null;
+    let otd;
+    if(!entrega){ otd=/FAILED/i.test(status)?'Insucesso':'Em rota'; }
+    else{ otd=(prazo&&entrega>prazo)?'Atraso':'No prazo'; }
+    return {pedido,turno,modalidade,plataforma,entreguePor,status,criadoVtex,criadoAbb,coletado,entrega,prazo,sep,aguard,tEnt,tTot,otd,sedex};
+  }).filter(r=>r.pedido);
+}
+function recomputeAndRender(){
+  const reportByOrder=new Map(state.report.map(r=>[r.order,r]));
+  BASE=computeBase(state.orders, reportByOrder);
+  META.ref=rangeLabel(BASE);
+  refreshModPlatMultiSelects();
+  refreshDateMultiSelect();
+  refreshSemanaMultiSelect();
+  refreshChSemanaWeekSelect();
+  setStatus(); show('dash'); render();
+}
+
+/* ---------- rascunho local (antes de publicar) ---------- */
+function persistPendingToLocalStorage(){
+  try{
+    localStorage.setItem(LS_KEYS.pendingOrders, JSON.stringify(state.orders));
+    localStorage.setItem(LS_KEYS.pendingReport, JSON.stringify(state.report));
+  }catch(e){
+    clearPendingLocalStorage();
+    log('Aviso: base grande demais para o cache local — os dados vivem no GitHub após publicar (não é problema).');
+  }
+}
+function restorePendingFromLocalStorage(){
+  try{
+    const o=localStorage.getItem(LS_KEYS.pendingOrders);
+    const r=localStorage.getItem(LS_KEYS.pendingReport);
+    if(o) state.orders=JSON.parse(o);
+    if(r) state.report=JSON.parse(r);
+  }catch(e){}
+}
+function clearPendingLocalStorage(){
+  try{ localStorage.removeItem(LS_KEYS.pendingOrders); localStorage.removeItem(LS_KEYS.pendingReport); }catch(e){}
+}
+
+/* =====================================================================
+   PUBLICAÇÃO NO GITHUB (idêntico ao mecanismo do painel da rede)
+===================================================================== */
+function downloadJson(filename, data){
+  const blob=new Blob([JSON.stringify(data)], {type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click();
+}
+function downloadBytes(filename, bytes, mime){
+  const blob=new Blob([bytes], {type:mime||'application/octet-stream'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click();
+}
+async function gzipStringToBytes(str){
+  const stream=new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+function bytesToBase64(bytes){
+  let bin=''; const CH=0x8000;
+  for(let i=0;i<bytes.length;i+=CH) bin+=String.fromCharCode.apply(null, bytes.subarray(i,i+CH));
+  return btoa(bin);
+}
+async function fetchGzJson(path){
+  try{
+    const res=await fetch(path, {cache:'no-store'});
+    if(!res.ok) return null;
+    const ds=res.body.pipeThrough(new DecompressionStream('gzip'));
+    const text=await new Response(ds).text();
+    return JSON.parse(text);
+  }catch(e){ return null; }
+}
+async function fetchJsonSafe(path){
+  try{ const res=await fetch(path, {cache:'no-store'}); if(!res.ok) return null; return await res.json(); }catch(e){ return null; }
+}
+/* Prefere o .gz (formato novo); cai pro .json cru se ainda não houver .gz publicado.
+   Cache-busting (?t=) garante que o navegador e o CDN do GitHub Pages nunca sirvam
+   uma versão antiga do arquivo. */
+async function fetchDataFile(basePath){
+  const bust='?t='+Date.now();
+  const gz=await fetchGzJson(basePath+'.gz'+bust);
+  if(gz!=null) return gz;
+  return fetchJsonSafe(basePath+bust);
+}
+async function githubApiFetch(url, token, opts, step){
+  const label=step||(opts&&opts.method)||'GET';
+  let res;
+  try{
+    res=await fetch(url, Object.assign({}, opts, {
+      headers: Object.assign({Authorization:`Bearer ${token}`, Accept:'application/vnd.github+json'}, opts&&opts.headers),
+    }));
+  }catch(netErr){
+    console.error(`[publicar] rede falhou em "${label}" (${url}):`, netErr);
+    throw new Error(`Rede falhou em "${label}" — ${netErr.message}. Provável payload grande demais ou bloqueio de rede/extensão.`);
+  }
+  if(!res.ok){ const t=await res.text(); console.error(`[publicar] HTTP ${res.status} em "${label}":`, t.slice(0,300)); throw new Error(`HTTP ${res.status} em "${label}" — ${t.slice(0,200)}`); }
+  return res.json();
+}
+/* Contents API (PUT) rejeita arquivos acima de ~1MB; orders.json/report.json podem passar
+   disso facilmente, então publicamos via Git Data API (blob→tree→commit→ref), que não tem
+   esse limite e deixa todos os arquivos numa única commit. */
+async function githubPublishFiles(owner, repo, branch, token, files, message){
+  const base=`https://api.github.com/repos/${owner}/${repo}`;
+  const refData=await githubApiFetch(`${base}/git/refs/heads/${encodeURIComponent(branch)}`, token, null, 'GET ref');
+  const parentCommitSha=refData.object.sha;
+  const parentCommit=await githubApiFetch(`${base}/git/commits/${parentCommitSha}`, token, null, 'GET commit pai');
+  const baseTreeSha=parentCommit.tree.sha;
+  const treeEntries=[];
+  for(const f of files){
+    const b64=f.contentB64!=null?f.contentB64:btoa(unescape(encodeURIComponent(JSON.stringify(f.contentObj))));
+    const blob=await githubApiFetch(`${base}/git/blobs`, token, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content:b64, encoding:'base64'}),
+    }, `POST blob ${f.path}`);
+    treeEntries.push({path:f.path, mode:'100644', type:'blob', sha:blob.sha});
+  }
+  const newTree=await githubApiFetch(`${base}/git/trees`, token, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_tree:baseTreeSha, tree:treeEntries}),
+  }, 'POST tree');
+  const newCommit=await githubApiFetch(`${base}/git/commits`, token, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message, tree:newTree.sha, parents:[parentCommitSha]}),
+  }, 'POST commit');
+  await githubApiFetch(`${base}/git/refs/heads/${encodeURIComponent(branch)}`, token, {
+    method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({sha:newCommit.sha}),
+  }, 'PATCH ref');
+}
+function showToast(message, type){
+  const el=document.createElement('div');
+  el.className='toast'+(type==='error'?' error':'');
+  el.textContent=message;
+  document.body.appendChild(el);
+  requestAnimationFrame(()=>el.classList.add('show'));
+  setTimeout(()=>{ el.classList.remove('show'); setTimeout(()=>el.remove(),300); },5000);
+}
+
+const ghToken=()=>{ try{ return localStorage.getItem(LS_KEYS.ghToken)||''; }catch(e){ return ''; } };
+function updatePublishBtn(){
+  const b=$('#btnPublish');
+  if(b) b.textContent=ghToken()?'Publicar no GitHub':'Publicar (snapshot)';
+}
+
+async function publishSnapshot(){
+  if(!state.orders.length && !state.report.length){
+    showToast('Carregue os dados primeiro em "Atualizar dados".', 'error');
+    return;
+  }
+  const token=ghToken();
+  const btn=$('#btnPublish'); btn.disabled=true; const prevLabel=btn.textContent;
+  btn.textContent=token?'Publicando…':'Compactando…';
+  try{
+    const ordersGz=await gzipStringToBytes(JSON.stringify(state.orders));
+    const reportGz=await gzipStringToBytes(JSON.stringify(state.report));
+    const meta={updatedAt:new Date().toISOString(), updatedBy:myName()||null};
+    if(!token){
+      downloadBytes('orders.json.gz', ordersGz, 'application/gzip');
+      downloadBytes('report.json.gz', reportGz, 'application/gzip');
+      downloadJson('meta.json', meta);
+      showToast('Arquivos .gz baixados — suba em data/ do repositório. Dica: configure o token (⚙️) para publicar direto.');
+      return;
+    }
+    await githubPublishFiles(GH_OWNER, GH_REPO, GH_BRANCH, token, [
+      {path:'data/orders.json.gz', contentB64: bytesToBase64(ordersGz)},
+      {path:'data/report.json.gz', contentB64: bytesToBase64(reportGz)},
+      {path:'data/meta.json', contentObj: meta},
+    ], 'Atualiza dados do painel Dark Store (orders, report)');
+    clearPendingLocalStorage();
+    META.updatedAt=meta.updatedAt; META.updatedBy=meta.updatedBy; setStatus();
+    showToast('Publicado no GitHub! O site atualiza para todos em alguns minutos.');
+  }catch(err){
+    const msg=/HTTP 401/.test(err.message)?'Token inválido ou expirado — abra ⚙️ e cole um token novo.':err.message;
+    showToast('Falha ao publicar: '+msg, 'error');
+  }finally{
+    btn.disabled=false; btn.textContent=prevLabel; updatePublishBtn();
+  }
+}
+
+/* =====================================================================
+   DIAGNÓSTICO COLABORATIVO — publicado como data/diagnostico.json,
+   mesclado por timestamp antes de cada publicação e recarregado por polling
+   para refletir edições de outras pessoas.
+===================================================================== */
+function persistDiagLocal(){ try{ localStorage.setItem(LS_KEYS.pendingDiag, JSON.stringify(DIAG)); }catch(e){} }
+function restoreDiagLocal(){ try{ const d=localStorage.getItem(LS_KEYS.pendingDiag); if(d) return JSON.parse(d); }catch(e){} return null; }
+async function fetchDiagFresh(){ return fetchJsonSafe('data/diagnostico.json?t='+Date.now()); }
+
+function scheduleDiagSave(){
+  persistDiagLocal();
+  if(!ghToken()){
+    $('#saveState').textContent='(configure o token ⚙️ para sincronizar com todos)';
+    $('#saveState').className='savestate saving';
+    return;
+  }
+  $('#saveState').textContent='salvando…'; $('#saveState').className='savestate saving';
+  if(saveTimer) clearTimeout(saveTimer);
+  saveTimer=setTimeout(publishDiag, 2500);
+}
+async function publishDiag(){
+  const token=ghToken();
+  if(!token) return;
+  try{
+    // mescla com o que outros usuários publicaram nesse meio tempo, por timestamp
+    const remote=(await fetchDiagFresh())||{};
+    for(const [p,n] of Object.entries(DIAG)){
+      const rn=remote[p];
+      if(!rn||(n.ts&&(!rn.ts||n.ts>rn.ts))) remote[p]=n;
+    }
+    DIAG=remote;
+    await githubPublishFiles(GH_OWNER, GH_REPO, GH_BRANCH, token, [
+      {path:'data/diagnostico.json', contentObj: DIAG},
+    ], 'Atualiza diagnóstico de atrasos — Dark Store');
+    try{ localStorage.removeItem(LS_KEYS.pendingDiag); }catch(e){}
+    $('#saveState').textContent='✓ salvo para todos'; $('#saveState').className='savestate saved';
+    if(!document.activeElement||!document.activeElement.closest('.diag')) renderAtrasos();
+    setTimeout(()=>{ if($('#saveState').textContent.startsWith('✓')) $('#saveState').textContent=''; },4000);
+  }catch(err){
+    $('#saveState').textContent='⚠ falha ao salvar'; $('#saveState').className='savestate saving';
+  }
+}
+function startPolling(){
+  if(pollTimer) clearInterval(pollTimer);
+  pollTimer=setInterval(async()=>{
+    const remote=await fetchDiagFresh();
+    if(remote && JSON.stringify(remote)!==JSON.stringify(DIAG)){
+      DIAG=remote;
+      if(!document.activeElement||!document.activeElement.closest('.diag')) renderAtrasos();
+    }
+  }, 45000);
+}
+
+/* =====================================================================
+   TOKEN — diálogo de configuração
+===================================================================== */
+const dlgConfig=$('#dlgConfig');
+dlgConfig.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>dlgConfig.close());
+$('#btnConfig').onclick=()=>{ $('#cfgToken').value=ghToken(); dlgConfig.showModal(); };
+$('#btnSaveToken').onclick=()=>{
+  const v=$('#cfgToken').value.trim();
+  if(!v){ showToast('Cole um token válido.', 'error'); return; }
+  localStorage.setItem(LS_KEYS.ghToken, v);
+  updatePublishBtn(); dlgConfig.close();
+  showToast('Token salvo neste navegador. Publicar agora vai direto pro GitHub.');
+};
+$('#btnRemoveToken').onclick=()=>{
+  if(!ghToken()){ showToast('Nenhum token salvo.', 'error'); return; }
+  if(!confirm('Remover o token salvo neste navegador? Você volta a precisar baixar e subir os arquivos manualmente. Isso não revoga o token no GitHub — para revogar de vez, apague-o em github.com/settings/tokens.')) return;
+  localStorage.removeItem(LS_KEYS.ghToken);
+  $('#cfgToken').value='';
+  updatePublishBtn(); dlgConfig.close();
+  showToast('Token removido deste navegador.');
+};
+$('#btnPublish').onclick=publishSnapshot;
+
+/* =====================================================================
+   ATUALIZAR DADOS — diálogo de importação (Orders + Report)
+===================================================================== */
+const dlgUpdate=$('#dlgUpdate');
+$('#btnUpload').onclick=()=>dlgUpdate.showModal();
+$('#btnEmptyUpload').onclick=()=>dlgUpdate.showModal();
+dlgUpdate.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>dlgUpdate.close());
+
+function log(msg){
+  const box=$('#updateLog');
+  box.style.display='block';
+  box.textContent+=msg+'\n';
+  box.scrollTop=box.scrollHeight;
+}
+function parseCsvFile(file){
+  return new Promise((resolve,reject)=>{
+    Papa.parse(file, {header:true, skipEmptyLines:true, encoding:'UTF-8',
+      complete:res=>resolve(res.data), error:err=>reject(err)});
+  });
+}
+function parseXlsxFile(file){
+  return new Promise((resolve,reject)=>{
+    const rd=new FileReader();
+    rd.onload=e=>{
+      try{
+        const wb=XLSX.read(e.target.result, {type:'array', cellDates:true});
+        const sn=wb.SheetNames[0];
+        resolve(XLSX.utils.sheet_to_json(wb.Sheets[sn], {defval:null}));
+      }catch(err){ reject(err); }
+    };
+    rd.onerror=()=>reject(new Error('Falha ao ler '+file.name));
+    rd.readAsArrayBuffer(file);
+  });
+}
+function parseAnyFile(file){ return /\.(xlsx|xlsm)$/i.test(file.name) ? parseXlsxFile(file) : parseCsvFile(file); }
+
+$('#btnProcessFiles').onclick=async()=>{
+  $('#updateLog').textContent='';
+  const fOrders=$('#fileOrders').files[0];
+  const fReport=$('#fileReport').files[0];
+  if(!fOrders && !fReport){ log('Selecione ao menos um arquivo.'); return; }
+  const btn=$('#btnProcessFiles'); btn.disabled=true;
+  try{
+    if(fOrders){
+      log(`Lendo ${fOrders.name}…`);
+      const rows=await parseAnyFile(fOrders);
+      const picked=pickOrderRows(rows);
+      state.orders=mergeByKey(state.orders, picked, r=>r.on);
+      log(`Orders: ${rows.length} linhas lidas · ${picked.length} válidas nesta importação · ${state.orders.length} acumulados no total.`);
+    }
+    if(fReport){
+      log(`Lendo ${fReport.name}…`);
+      const rows=await parseAnyFile(fReport);
+      const picked=dedupeReportByOrder(pickReportRows(rows));
+      state.report=mergeByKey(state.report, picked, r=>r.order);
+      log(`Report: ${rows.length} linhas lidas · ${picked.length} pedidos distintos nesta importação · ${state.report.length} acumulados no total.`);
+    }
+    persistPendingToLocalStorage();
+    recomputeAndRender();
+    $('#pendingSummary').style.display='block';
+    $('#pendOrdersCount').textContent=state.orders.length;
+    $('#pendReportCount').textContent=state.report.length;
+    log('Aplicado ao painel neste navegador. Isso ainda NÃO é visível para outras pessoas — feche este diálogo e clique em "Publicar" para tornar público.');
+  }catch(err){
+    log('ERRO ao processar arquivos: '+(err&&err.message?err.message:err));
+  }finally{
+    btn.disabled=false;
+  }
+};
+$('#btnWipeAccum').onclick=()=>{
+  if(!confirm('Apagar todo o acumulado de Orders e Report deste navegador? Use na virada do mês. Isso não apaga o que já está publicado no GitHub até você clicar em Publicar de novo.')) return;
+  state.orders=[]; state.report=[];
+  clearPendingLocalStorage();
+  recomputeAndRender();
+  log('Acumulado apagado.');
+};
+
+/* ---------- ciclo de vida ---------- */
+function setStatus(){
+  const upd=META.updatedAt?new Date(META.updatedAt):null;
+  $('#daypill').textContent=META.ref?('Base: '+META.ref):'Sem dados';
+  $('#statusbar').innerHTML=META.ref
+    ? `<span class="ok">●</span> Base carregada${META.updatedBy?' por <strong>'+esc(META.updatedBy)+'</strong>':''}${upd?' em '+fmtDT(upd):''} &bull; ${BASE.length} pedidos no total`
+    : `<span class="warn">●</span> Nenhuma base carregada ainda — use "Atualizar dados"`;
+}
+function show(view){
+  $('#loading').style.display=view==='loading'?'block':'none';
+  $('#empty').style.display=view==='empty'?'block':'none';
+  $('#dash').style.display=view==='dash'?'block':'none';
+  $('#foot').style.display=view==='dash'?'block':'none';
+  $('#btnXlsx').disabled=view!=='dash';
+  $('#btnPng').disabled=view!=='dash';
+}
+async function boot(){
+  updatePublishBtn();
+  show('loading');
+  const [pubOrders, pubReport, pubMeta, pubDiag] = await Promise.all([
+    fetchDataFile('data/orders.json'), fetchDataFile('data/report.json'),
+    fetchJsonSafe('data/meta.json?t='+Date.now()), fetchDiagFresh(),
+  ]);
+  if(pubDiag) DIAG=pubDiag;
+  if(pubOrders) state.orders=pubOrders;
+  if(pubReport) state.report=pubReport;
+  if(pubOrders||pubReport){
+    META.ref=null; META.updatedAt=pubMeta?pubMeta.updatedAt:null; META.updatedBy=pubMeta?pubMeta.updatedBy:null;
+    clearPendingLocalStorage();
+  } else {
+    const dPending=restoreDiagLocal(); if(dPending) DIAG=Object.assign({},DIAG,dPending);
+    restorePendingFromLocalStorage();
+  }
+  if(!state.orders.length && !state.report.length){
+    META={ref:null,updatedAt:null,updatedBy:null};
+    setStatus(); show('empty');
+  } else {
+    recomputeAndRender();
+  }
+  startPolling();
+}
+
+/* =====================================================================
+   RENDER (idêntico às regras do painel original)
+===================================================================== */
+function render(){
+  FILTERED=BASE.filter(r=>
+    (MS.data.size===0||MS.data.has(rowDateKey(r))) &&
+    (MS.semana.size===0||MS.semana.has(rowWeekKey(r))) &&
+    (MS.turno.size===0||MS.turno.has(r.turno)) &&
+    (MS.mod.size===0||MS.mod.has(r.modalidade)) &&
+    (MS.plat.size===0||MS.plat.has(r.plataforma))
+  );
+  const parts=[];
+  parts.push(MS.data.size? MS.data.size+' dia(s)':'mês inteiro');
+  if(MS.semana.size) parts.push(MS.semana.size+' semana(s)');
+  if(MS.turno.size) parts.push(MS.turno.size+' turno(s)');
+  if(MS.mod.size) parts.push(MS.mod.size+' modalidade(s)');
+  if(MS.plat.size) parts.push(MS.plat.size+' plataforma(s)');
+  $('#rowCount').textContent=FILTERED.length+' de '+BASE.length+' pedidos • '+parts.join(' • ');
+  const total=FILTERED.length;
+  const noPrazo=FILTERED.filter(r=>r.otd==='No prazo').length;
+  const atrasos=FILTERED.filter(r=>r.otd==='Atraso').length;
+  const insuc=FILTERED.filter(r=>r.otd==='Insucesso').length;
+  const emRota=FILTERED.filter(r=>r.otd==='Em rota').length;
+  const entregues=noPrazo+atrasos;
+  const sla=pctNum(noPrazo,entregues);
+  const ds=pctNum(entregues,entregues+insuc);
+  const sepRapidaUber=avg(FILTERED.filter(r=>/entrega r[aá]pida/i.test(r.modalidade)&&!/(s[aã]o\s*jo[aã]o|controlados)/i.test(r.modalidade)).map(r=>r.sep));
+  const sepRapidaSJ=avg(FILTERED.filter(r=>/entrega r[aá]pida/i.test(r.modalidade)&&/(s[aã]o\s*jo[aã]o|controlados)/i.test(r.modalidade)).map(r=>r.sep));
+  const kpi=(lbl,val,sub,cls='')=>`<div class="kpi ${cls}"><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="sub">${sub||''}</div></div>`;
+  $('#kpis').innerHTML=
+    kpi('Pedidos',total,'criados no Orders (Abbiamo)')+
+    kpi('Entregues',entregues,pct(entregues,total)+' do total')+
+    kpi('No prazo',noPrazo,pct(noPrazo,total)+' do total','good')+
+    kpi('Atrasos',atrasos,pct(atrasos,total)+' do total','bad')+
+    kpi('Insucessos',insuc,emRota+' em rota','warn')+
+    kpi('SLA',sla!=null?Math.round(sla)+'%':'—','meta 95%',sla==null?'':(sla>=95?'good':(sla>=70?'warn':'bad')))+
+    kpi('DS',ds!=null?Math.round(ds)+'%':'—','delivery success',ds==null?'':(ds>=95?'good':'warn'))+
+    kpi('Separação (Entrega Rápida)',fmtDur(sepRapidaUber),'meta 00:15:00',sepRapidaUber==null?'':(sepRapidaUber<=MIN15?'good':'bad'))+
+    kpi('Separação (Rápida São João)',fmtDur(sepRapidaSJ),'meta 00:15:00',sepRapidaSJ==null?'':(sepRapidaSJ<=MIN15?'good':'bad'));
+  renderNS(); renderTempos(); renderTurno(); renderAtrasos(); renderBase();
+  drawSemana();
+}
+function groupByMod(){
+  const map={};
+  FILTERED.forEach(r=>{(map[r.modalidade]=map[r.modalidade]||[]).push(r);});
+  return Object.entries(map).sort((a,b)=>b[1].length-a[1].length);
+}
+function renderNS(){
+  const rows=groupByMod().map(([mod,rs])=>{
+    const np=rs.filter(r=>r.otd==='No prazo').length,at=rs.filter(r=>r.otd==='Atraso').length,ins=rs.filter(r=>r.otd==='Insucesso').length;
+    return {mod,ped:rs.length,np,at,ins,p:pctNum(np,np+at)};
+  });
+  const tNp=rows.reduce((a,r)=>a+r.np,0),tAt=rows.reduce((a,r)=>a+r.at,0),tIns=rows.reduce((a,r)=>a+r.ins,0);
+  const tP=pctNum(tNp,tNp+tAt);
+  $('#tblNS').innerHTML=`<thead><tr><th>Modalidade</th><th class="num">Pedidos</th><th class="num">No prazo</th><th class="num">Atrasos</th><th class="num">Insucessos</th><th class="num">SLA</th></tr></thead><tbody>`+
+    rows.map(r=>`<tr><td>${esc(r.mod)}</td><td class="num">${r.ped}</td><td class="num">${r.np}</td><td class="num">${r.at}</td><td class="num">${r.ins}</td><td class="num"><span class="ns ${nsClass(r.p)}">${r.p!=null?Math.round(r.p)+'%':'—'}</span></td></tr>`).join('')+
+    `<tr class="total"><td>Total</td><td class="num">${FILTERED.length}</td><td class="num">${tNp}</td><td class="num">${tAt}</td><td class="num">${tIns}</td><td class="num"><span class="ns ${nsClass(tP)}">${tP!=null?Math.round(tP)+'%':'—'}</span></td></tr></tbody>`;
+}
+function renderTempos(){
+  const data=groupByMod().map(([mod,rs])=>({mod,sep:avg(rs.map(r=>r.sep)),ag:avg(rs.filter(r=>!r.sedex).map(r=>r.aguard)),ent:avg(rs.filter(r=>!r.sedex).map(r=>r.tEnt)),tot:avg(rs.map(r=>r.tTot))}));
+  $('#tblTempos').innerHTML=`<thead><tr><th>Modalidade</th><th class="num">Separação</th><th class="num">Ag. coleta</th><th class="num">Entrega</th><th class="num">Tempo total</th></tr></thead><tbody>`+
+    data.map(d=>`<tr><td>${esc(d.mod)}</td><td class="num" style="${d.sep>MIN15?'color:var(--red);font-weight:900':''}">${fmtDur(d.sep)}</td><td class="num">${fmtDur(d.ag)}</td><td class="num">${fmtDur(d.ent)}</td><td class="num">${fmtDur(d.tot)}</td></tr>`).join('')+`</tbody>`;
+  drawTempos(data);
+}
+function renderTurno(){
+  const rows=groupByMod().map(([m])=>m).map(mod=>{
+    const cell=t=>{const rs=FILTERED.filter(r=>r.modalidade===mod&&r.turno===t);return {n:rs.length,s:avg(rs.map(r=>r.sep))};};
+    return {mod,t1:cell('1º turno'),t2:cell('2º turno')};
+  });
+  $('#tblTurno').innerHTML=`<thead><tr><th>Modalidade</th><th class="num">1º turno (até 15:30)</th><th class="num">Qtde</th><th class="num">2º turno (após 15:30)</th><th class="num">Qtde</th></tr></thead><tbody>`+
+    rows.map(r=>`<tr><td>${esc(r.mod)}</td><td class="num">${fmtDur(r.t1.s)}</td><td class="num">${r.t1.n}</td><td class="num">${fmtDur(r.t2.s)}</td><td class="num">${r.t2.n}</td></tr>`).join('')+`</tbody>`;
+  drawTurno(rows);
+}
+
+const MOTIVOS=['Atraso na separação','Alto volume de pedidos','Equipe reduzida','Falha operacional','Pedido não localizado','Divergência de estoque','Aguardando farmacêutico','Erro na finalização do pedido','Pedido não finalizado na plataforma','Condições climáticas','Demora coleta','Sistema'];
+function renderAtrasos(){
+  const rs=FILTERED.filter(r=>r.otd==='Atraso');
+  const motivoSel=(pedido,val)=>`<select data-p="${esc(pedido)}" data-f="motivo"><option value="">— selecione —</option>`+
+    MOTIVOS.map(m=>`<option${m===val?' selected':''}>${m}</option>`).join('')+`</select>`;
+  $('#tblAtrasos').innerHTML=`<thead><tr><th>Data</th><th>Pedido</th><th>Turno</th><th>Modalidade</th><th>Plataforma</th><th>Entregue por</th><th class="num">Separação</th><th class="num">Ag. coleta</th><th class="num">Entrega</th><th>Motivo do atraso</th><th>Plano de ação</th><th>Preenchido por</th></tr></thead><tbody>`+
+    (rs.length? rs.map(r=>{
+      const n=DIAG[r.pedido]||{};
+      return `<tr><td>${rowDateLabel(r)}</td><td>${esc(r.pedido)}</td><td>${esc(r.turno)}</td><td>${esc(r.modalidade)}</td><td>${esc(r.plataforma)}</td><td>${esc(r.entreguePor)}</td>
+      <td class="num">${fmtDur(r.sep)}</td><td class="num">${fmtDur(r.aguard)}</td><td class="num">${fmtDur(r.tEnt)}</td>
+      <td>${motivoSel(r.pedido,n.motivo||'')}</td>
+      <td><input data-p="${esc(r.pedido)}" data-f="plano" value="${esc(n.plano||'')}" placeholder="ação combinada"></td>
+      <td class="autor">${esc(n.autor||'')}</td></tr>`;
+    }).join('') : `<tr><td colspan="12" style="text-align:center;color:var(--muted)">Nenhum pedido em atraso com os filtros atuais 🎉</td></tr>`)+`</tbody>`;
+  $('#tblAtrasos').querySelectorAll('input,select').forEach(inp=>{
+    inp.addEventListener(inp.tagName==='SELECT'?'change':'input',e=>{
+      const p=e.target.dataset.p;
+      DIAG[p]=DIAG[p]||{};
+      DIAG[p][e.target.dataset.f]=e.target.value;
+      DIAG[p].autor=myName()||DIAG[p].autor||'';
+      DIAG[p].ts=new Date().toISOString();
+      scheduleDiagSave();
+    });
+  });
+}
+function renderBase(){
+  const pillCls={'No prazo':'prazo','Atraso':'atraso','Insucesso':'insu','Em rota':'rota'};
+  $('#tblBase').innerHTML=`<thead><tr><th>Data</th><th>Pedido</th><th>Turno</th><th>Modalidade</th><th>Plataforma</th><th>Entregue por</th><th>Criado Orders</th><th>Criado Report</th><th>Coletado</th><th>Entrega</th><th>Prazo</th><th class="num">Separação</th><th class="num">Ag. coleta</th><th class="num">T. entrega</th><th>OTD</th></tr></thead><tbody>`+
+    FILTERED.map(r=>`<tr><td>${rowDateLabel(r)}</td><td>${esc(r.pedido)}</td><td>${esc(r.turno)}</td><td>${esc(r.modalidade)}</td><td>${esc(r.plataforma)}</td><td>${esc(r.entreguePor)}</td>
+    <td>${fmtDT(r.criadoAbb)}</td><td>${fmtDT(r.criadoVtex)}</td><td>${r.sedex?'Sedex':(r.coletado?fmtDT(r.coletado):'Não coletado')}</td>
+    <td>${r.entrega?fmtDT(r.entrega):(r.otd==='Insucesso'?'Insucesso':'—')}</td><td>${fmtDT(r.prazo)}</td>
+    <td class="num">${fmtDur(r.sep)}</td><td class="num">${fmtDur(r.aguard)}</td><td class="num">${fmtDur(r.tEnt)}</td>
+    <td><span class="pill ${pillCls[r.otd]||''}">${r.otd}</span></td></tr>`).join('')+`</tbody>`;
+}
+
+/* ---------- gráficos ---------- */
+const COLORS={green:'#149a46',red:'#e5192d',grey:'#9aa0b4',blue:'#20359b',gold:'#e8960f',navy:'#16276e'};
+function mkChart(id,cfg){ if(charts[id]) charts[id].destroy(); charts[id]=new Chart($(id),cfg); }
+if(typeof Chart!=='undefined'){ Chart.defaults.font.family="'Nunito Sans',sans-serif"; Chart.defaults.font.weight=700; }
+
+/* Plugin local (não registrado globalmente) para desenhar rótulos de dados fixos,
+   sem precisar passar o mouse — usado apenas no gráfico "Evolução na semana vigente". */
+const fixedLabelsPlugin={
+  id:'fixedLabels',
+  afterDatasetsDraw(chart){
+    const {ctx}=chart;
+    chart.data.datasets.forEach((ds,i)=>{
+      const meta=chart.getDatasetMeta(i);
+      if(meta.hidden) return;
+      meta.data.forEach((el,idx)=>{
+        const val=ds.data[idx];
+        if(val==null) return;
+        const isLine=ds.yAxisID==='y1';
+        const text=isLine?Math.round(val)+'%':val+' min';
+        ctx.save();
+        ctx.font='800 11px "Nunito Sans", sans-serif';
+        ctx.fillStyle=isLine?COLORS.red:'#ffffff';
+        ctx.textAlign='center';
+        ctx.textBaseline='middle';
+        if(isLine){
+          ctx.fillStyle=COLORS.red;
+          ctx.fillText(text, el.x, el.y-12);
+        } else {
+          const top=el.y;
+          const insideBar=(el.base-top)>16;
+          ctx.fillStyle=insideBar?'#ffffff':COLORS.navy;
+          ctx.fillText(text, el.x, insideBar?top+12:top-9);
+        }
+        ctx.restore();
+      });
+    });
+  }
+};
+
+/* Evolução semanal (segunda a domingo) sempre referente à semana escolhida no seletor do
+   card (por padrão a vigente), respeitando os filtros de Turno, Modalidade e Plataforma.
+   A barra de separação considera apenas a modalidade Entrega Rápida (Uber). O filtro de
+   Data/Semana do topo não se aplica aqui de propósito — o objetivo do gráfico é mostrar a
+   tendência da semana do início ao fim. */
+function currentWeekDays(){
+  const info=isoWeekInfo(new Date());
+  const monday=isoWeekMonday(info.year,info.week);
+  const days=[];
+  for(let i=0;i<7;i++) days.push(new Date(monday.getFullYear(),monday.getMonth(),monday.getDate()+i));
+  return days;
+}
+function selectedWeekDays(){
+  if(SEMANA_CHART_WEEK){
+    const [y,w]=SEMANA_CHART_WEEK.split('-W');
+    const monday=isoWeekMonday(parseInt(y,10),parseInt(w,10));
+    const days=[];
+    for(let i=0;i<7;i++) days.push(new Date(monday.getFullYear(),monday.getMonth(),monday.getDate()+i));
+    return days;
+  }
+  return currentWeekDays();
+}
+function drawSemana(){
+  const dayNames=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+  const rows=BASE.filter(r=>
+    (MS.turno.size===0||MS.turno.has(r.turno)) &&
+    (MS.mod.size===0||MS.mod.has(r.modalidade)) &&
+    (MS.plat.size===0||MS.plat.has(r.plataforma))
+  );
+  const isEntregaRapidaUber=r=>/entrega r[aá]pida/i.test(r.modalidade)&&!/(s[aã]o\s*jo[aã]o|controlados)/i.test(r.modalidade);
+  const byDay=selectedWeekDays().map((d,i)=>{
+    const key=dateKey(d);
+    const rs=rows.filter(r=>rowDateKey(r)===key);
+    const np=rs.filter(r=>r.otd==='No prazo').length;
+    const at=rs.filter(r=>r.otd==='Atraso').length;
+    const rsUber=rs.filter(isEntregaRapidaUber);
+    return {
+      label:dayNames[i]+' '+String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'),
+      sla:pctNum(np,np+at),
+      sep:avg(rsUber.map(r=>r.sep)),
+      n:rs.length
+    };
+  });
+  const toMin=v=>v==null?null:Math.round(v/6000)/10;
+  mkChart('#chSemana',{
+    type:'bar',
+    plugins:[fixedLabelsPlugin],
+    data:{
+      labels:byDay.map(d=>d.label),
+      datasets:[
+        {type:'bar',label:'Separação — Entrega Rápida Uber (min)',data:byDay.map(d=>toMin(d.sep)),backgroundColor:COLORS.navy,yAxisID:'y',order:2,borderRadius:4},
+        {type:'line',label:'OTD / SLA (%)',data:byDay.map(d=>d.sla),borderColor:COLORS.red,backgroundColor:COLORS.red,yAxisID:'y1',tension:.3,pointRadius:4,pointBackgroundColor:COLORS.red,order:1}
+      ]
+    },
+    options:{
+      maintainAspectRatio:false,
+      layout:{padding:{top:22}},
+      scales:{
+        y:{position:'left',beginAtZero:true,title:{display:true,text:'minutos (separação — Uber)'}},
+        y1:{position:'right',min:0,max:100,grid:{drawOnChartArea:false},title:{display:true,text:'SLA %'}}
+      },
+      plugins:{
+        legend:{position:'bottom'},
+        tooltip:{callbacks:{label:ctx=>{
+          const v=ctx.raw;
+          if(v==null) return ctx.dataset.label+': —';
+          return ctx.dataset.yAxisID==='y1' ? ctx.dataset.label+': '+Math.round(v)+'%' : ctx.dataset.label+': '+v+' min';
+        }}}
+      }
+    }
+  });
+}
+
+function drawTempos(data){
+  const toMin=v=>v==null?0:v/60000;
+  mkChart('#chTempos',{type:'bar',data:{labels:data.map(d=>d.mod),datasets:[{label:'Separação',data:data.map(d=>toMin(d.sep)),backgroundColor:COLORS.navy,stack:'s'},{label:'Ag. coleta',data:data.map(d=>toMin(d.ag)),backgroundColor:COLORS.gold,stack:'s'},{label:'Entrega',data:data.map(d=>toMin(d.ent)),backgroundColor:COLORS.red,stack:'s'}]},options:{maintainAspectRatio:false,indexAxis:'y',scales:{x:{stacked:true,title:{display:true,text:'minutos (média)'}},y:{stacked:true}},plugins:{legend:{position:'bottom'}}}});
+}
+function drawTurno(rows){
+  const toMin=v=>v==null?0:v/60000;
+  mkChart('#chTurno',{type:'bar',data:{labels:rows.map(r=>r.mod),datasets:[{label:'1º turno',data:rows.map(r=>toMin(r.t1.s)),backgroundColor:COLORS.blue},{label:'2º turno',data:rows.map(r=>toMin(r.t2.s)),backgroundColor:COLORS.gold}]},options:{maintainAspectRatio:false,scales:{y:{title:{display:true,text:'separação média (min)'}}},plugins:{legend:{position:'bottom'}}}});
+}
+
+/* ---------- exportações ---------- */
+function exportXlsx(){
+  const wb=XLSX.utils.book_new();
+  const durX=ms=>ms==null?'':fmtDur(ms);
+  const dtX=d=>d?fmtDT(d):'';
+  const total=FILTERED.length,np=FILTERED.filter(r=>r.otd==='No prazo').length,at=FILTERED.filter(r=>r.otd==='Atraso').length,ins=FILTERED.filter(r=>r.otd==='Insucesso').length,rota=FILTERED.filter(r=>r.otd==='Em rota').length;
+  const ent=np+at;
+  const sepUber=avg(FILTERED.filter(r=>/entrega r[aá]pida/i.test(r.modalidade)&&!/(s[aã]o\s*jo[aã]o|controlados)/i.test(r.modalidade)).map(r=>r.sep));
+  const sepSJ=avg(FILTERED.filter(r=>/entrega r[aá]pida/i.test(r.modalidade)&&/(s[aã]o\s*jo[aã]o|controlados)/i.test(r.modalidade)).map(r=>r.sep));
+  const resumo=[['Acompanhamento Dark Store — '+($('#daypill').textContent)+' — '+($('#rowCount').textContent)],[],
+    ['Pedidos','Entregues','No prazo','Atrasos','Insucessos','Em rota','SLA','DS','Média separação (Entrega Rápida)','Média separação (Rápida São João)'],
+    [total,ent,np,at,ins,rota,pct(np,ent),pct(ent,ent+ins),durX(sepUber),durX(sepSJ)],[],
+    ['Nível de Serviço por Modalidade'],['Modalidade','Pedidos','No prazo','Atrasos','Insucessos','SLA']];
+  groupByMod().forEach(([mod,rs])=>{
+    const n=rs.filter(r=>r.otd==='No prazo').length,a=rs.filter(r=>r.otd==='Atraso').length,i=rs.filter(r=>r.otd==='Insucesso').length;
+    resumo.push([mod,rs.length,n,a,i,pct(n,n+a)]);
+  });
+  resumo.push([],['Tempo médio por etapa'],['Modalidade','Separação','Aguardando coleta','Entrega','Tempo total']);
+  groupByMod().forEach(([mod,rs])=>{
+    resumo.push([mod,durX(avg(rs.map(r=>r.sep))),durX(avg(rs.filter(r=>!r.sedex).map(r=>r.aguard))),durX(avg(rs.filter(r=>!r.sedex).map(r=>r.tEnt))),durX(avg(rs.map(r=>r.tTot)))]);
+  });
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(resumo),'Resumo');
+  const base=[['Data','Pedido','Turno','Modalidade','Plataforma','Entregue por','Status','Criado Orders','Criado Report','Coletado','Entrega','Prazo Prometido','Separação','Aguardando Coleta','Tempo de Entrega','Tempo Total','OTD']];
+  FILTERED.forEach(r=>base.push([rowDateLabel(r),r.pedido,r.turno,r.modalidade,r.plataforma,r.entreguePor,r.status,dtX(r.criadoAbb),dtX(r.criadoVtex),r.sedex?'Sedex':dtX(r.coletado),dtX(r.entrega),dtX(r.prazo),durX(r.sep),durX(r.aguard),durX(r.tEnt),durX(r.tTot),r.otd]));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(base),'Base Calculada');
+  const atr=[['Data','Pedido','Turno','Modalidade','Plataforma','Entregue por','Separação','Aguardando Coleta','Entrega','Motivo do atraso','Plano de ação','Preenchido por']];
+  FILTERED.filter(r=>r.otd==='Atraso').forEach(r=>{
+    const n=DIAG[r.pedido]||{};
+    atr.push([rowDateLabel(r),r.pedido,r.turno,r.modalidade,r.plataforma,r.entreguePor,durX(r.sep),durX(r.aguard),durX(r.tEnt),n.motivo||'',n.plano||'',n.autor||'']);
+  });
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(atr),'Atrasos');
+  XLSX.writeFile(wb,'Dashboard_Dark_Store_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+function exportDiag(){
+  const durX=ms=>ms==null?'':fmtDur(ms);
+  const wb=XLSX.utils.book_new();
+  const atr=[['Data','Pedido','Turno','Modalidade','Plataforma de entrega','Entregue por','Separação','Aguardando coleta','Entrega','Motivo do atraso','Plano de ação','Preenchido por']];
+  FILTERED.filter(r=>r.otd==='Atraso').forEach(r=>{
+    const n=DIAG[r.pedido]||{};
+    atr.push([rowDateLabel(r),r.pedido,r.turno,r.modalidade,r.plataforma,r.entreguePor,durX(r.sep),durX(r.aguard),durX(r.tEnt),n.motivo||'',n.plano||'',n.autor||'']);
+  });
+  const ws=XLSX.utils.aoa_to_sheet(atr);
+  ws['!cols']=[{wch:10},{wch:18},{wch:9},{wch:28},{wch:20},{wch:24},{wch:11},{wch:16},{wch:11},{wch:32},{wch:32},{wch:18}];
+  XLSX.utils.book_append_sheet(wb,ws,'Diagnóstico Atrasos');
+  XLSX.writeFile(wb,'Diagnostico_Atrasos_Dark_Store_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+async function exportPng(){
+  const btns=[...document.querySelectorAll('.btn')]; btns.forEach(b=>b.disabled=true);
+  try{
+    const canvas=await html2canvas(document.body,{backgroundColor:'#eef1f8',scale:2,ignoreElements:el=>el.classList&&(el.classList.contains('actions')||el.classList.contains('namebox'))});
+    const a=document.createElement('a');
+    a.download='Dashboard_Dark_Store_'+new Date().toISOString().slice(0,10)+'.png';
+    a.href=canvas.toDataURL('image/png'); a.click();
+  }finally{ btns.forEach(b=>b.disabled=false); }
+}
+
+/* ---------- eventos ---------- */
+$('#btnReload').addEventListener('click',boot);
+$('#btnXlsx').addEventListener('click',exportXlsx);
+$('#btnDiag').addEventListener('click',exportDiag);
+$('#btnPng').addEventListener('click',exportPng);
+initFilterDropdowns();
+$('#chSemanaWeekSel').addEventListener('change',e=>{ SEMANA_CHART_WEEK=e.target.value||null; drawSemana(); });
+
+boot();
+</script>
+</body>
+</html>
