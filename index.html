@@ -637,7 +637,9 @@ function computeBase(orders, reportByOrder){
 }
 function recomputeAndRender(){
   const reportByOrder=new Map(state.report.map(r=>[r.order,r]));
-  BASE=computeBase(state.orders, reportByOrder);
+  // Pedidos sem modalidade identificada (sem match no Report/VTEX) não entram em nenhuma
+  // métrica do painel — não são considerados pedidos operacionais válidos da Dark Store.
+  BASE=computeBase(state.orders, reportByOrder).filter(r=>r.modalidade!=='Não Identificado');
   META.ref=rangeLabel(BASE);
   refreshModPlatMultiSelects();
   refreshDateMultiSelect();
