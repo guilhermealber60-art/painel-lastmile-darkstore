@@ -1,5 +1,6 @@
 /* =====================================================================
    Worker de publicação — painel-lastmile-darkstore
+   (redeploy forçado para revincular o secret GITHUB_TOKEN)
    -----------------------------------------------------------------------
    Guarda o token do GitHub como secret no servidor (Cloudflare) e faz o
    commit em nome do painel. O navegador de quem clica em "Publicar" NUNCA
