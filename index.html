@@ -169,8 +169,7 @@
   <div class="actions">
     <button class="btn btn-ghost" id="btnUpload">📂 Atualizar dados</button>
     <button class="btn btn-ghost" id="btnReload">🔄 Recarregar</button>
-    <button class="btn btn-white" id="btnPublish">Publicar (snapshot)</button>
-    <button class="btn btn-ghost" id="btnConfig" title="Configurar publicação direta no GitHub">⚙️</button>
+    <button class="btn btn-white" id="btnPublish">📤 Publicar</button>
     <button class="btn btn-white" id="btnXlsx" disabled>⬇️ Excel</button>
     <button class="btn btn-red" id="btnPng" disabled>🖼️ Imagem</button>
   </div>
@@ -298,9 +297,7 @@
     <div style="margin-top:16px;padding:12px;border:1px solid var(--navy-mid);border-radius:10px;background:#eef1fb">
       <div style="font-weight:900;font-size:12.5px;color:var(--navy);margin-bottom:6px">Passo 2 — Publicar para todo mundo</div>
       <div style="font-size:11.5px;color:var(--ink);line-height:1.6">
-        Depois de processar, feche este diálogo e clique em <strong>Publicar</strong> na barra de cima.
-        Se você já configurou o token (botão ⚙️), a publicação vai direto pro GitHub; se não, o botão baixa os arquivos .gz
-        para você subir manualmente na pasta <code>data/</code> do repositório.
+        Depois de processar, feche este diálogo e clique em <strong>Publicar</strong> na barra de cima — vai direto pro GitHub, sem token nem configuração.
       </div>
     </div>
 
@@ -312,32 +309,6 @@
     </details>
   </div>
   <div class="dlg-foot"><button class="dlgbtn dlgbtn-ghost" data-close>Fechar</button></div>
-</dialog>
-
-<dialog id="dlgConfig">
-  <div class="dlg-head"><h3>Publicar direto no GitHub</h3><button data-close>×</button></div>
-  <div class="dlg-body">
-    <p style="font-size:12px;color:var(--ink);margin:0 0 12px;line-height:1.6">
-      Com um token configurado, o botão <strong>Publicar</strong> envia <code>data/orders.json.gz</code>, <code>data/report.json.gz</code> e
-      <code>data/meta.json</code> direto para o repositório <code id="cfgRepoName">guilhermealber60-art/painel-lastmile-darkstore</code> —
-      sem baixar arquivo, sem git, sem terminal. O mesmo token também publica o diagnóstico de atrasos (<code>data/diagnostico.json</code>).
-    </p>
-    <div style="padding:10px 12px;border:1px solid var(--red);border-radius:10px;background:var(--red-soft);font-size:11.5px;color:var(--ink);line-height:1.6;margin-bottom:14px">
-      <strong>Segurança:</strong> o token fica salvo só neste navegador (não é enviado a mim nem a ninguém além do GitHub).
-      Crie um <strong>fine-grained token</strong> em <strong>github.com/settings/tokens</strong>, restrito ao repositório
-      <strong>painel-lastmile-darkstore</strong>, com permissão apenas de <strong>Contents: Read and write</strong>, e defina uma expiração.
-      Se trocar de computador ou navegador, precisa configurar de novo.
-    </div>
-    <div class="field-row">
-      <label>Token de acesso (GitHub)</label>
-      <input type="password" id="cfgToken" placeholder="github_pat_…">
-    </div>
-  </div>
-  <div class="dlg-foot">
-    <button class="dlgbtn dlgbtn-danger" id="btnRemoveToken" style="margin-right:auto">Remover token deste navegador</button>
-    <button class="dlgbtn dlgbtn-ghost" data-close>Fechar</button>
-    <button class="dlgbtn dlgbtn-primary" id="btnSaveToken">Salvar</button>
-  </div>
 </dialog>
 
 <script>
@@ -359,17 +330,15 @@ window.addEventListener('load',()=>{
 const $ = s => document.querySelector(s);
 
 /* =====================================================================
-   CONFIGURAÇÃO DO REPOSITÓRIO DE PUBLICAÇÃO
-   Repositório de publicação fixo — só o token é configurável pelo usuário
-   (mesmo esquema do painel da rede: guilhermealber60-art/painel-lastmile-saojoao).
+   CONFIGURAÇÃO DA PUBLICAÇÃO
+   A publicação passa por um Worker (Cloudflare) que guarda o token do GitHub
+   no servidor — o navegador nunca vê o token, só chama este endpoint com os
+   arquivos prontos. Ver /worker/README.md para como implantar o Worker.
 ===================================================================== */
-const GH_OWNER = 'guilhermealber60-art';
-const GH_REPO  = 'painel-lastmile-darkstore';
-const GH_BRANCH = 'main';
+const PUBLISH_ENDPOINT = 'https://painel-darkstore-publish.SEU-SUBDOMINIO.workers.dev/publish';
 
 const LS_KEYS = {
   pendingOrders:'ds_pending_orders', pendingReport:'ds_pending_report', pendingDiag:'ds_pending_diag',
-  ghToken:'ds_gh_token',
 };
 
 const state = { orders:[], report:[] }; // acumulados (mergeados por chave) — ver pickOrderRows/pickReportRows
@@ -677,16 +646,9 @@ function clearPendingLocalStorage(){
 }
 
 /* =====================================================================
-   PUBLICAÇÃO NO GITHUB (idêntico ao mecanismo do painel da rede)
+   PUBLICAÇÃO — via Worker (o token do GitHub fica só no servidor, nunca
+   no navegador de quem publica)
 ===================================================================== */
-function downloadJson(filename, data){
-  const blob=new Blob([JSON.stringify(data)], {type:'application/json'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click();
-}
-function downloadBytes(filename, bytes, mime){
-  const blob=new Blob([bytes], {type:mime||'application/octet-stream'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click();
-}
 async function gzipStringToBytes(str){
   const stream=new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'));
   return new Uint8Array(await new Response(stream).arrayBuffer());
@@ -717,46 +679,21 @@ async function fetchDataFile(basePath){
   if(gz!=null) return gz;
   return fetchJsonSafe(basePath+bust);
 }
-async function githubApiFetch(url, token, opts, step){
-  const label=step||(opts&&opts.method)||'GET';
+/* O Worker recebe os arquivos já prontos (base64) e faz o commit no GitHub usando um
+   token guardado como secret no servidor — o navegador de quem publica nunca vê esse token. */
+async function publishFiles(files, message){
   let res;
   try{
-    res=await fetch(url, Object.assign({}, opts, {
-      headers: Object.assign({Authorization:`Bearer ${token}`, Accept:'application/vnd.github+json'}, opts&&opts.headers),
-    }));
+    res=await fetch(PUBLISH_ENDPOINT, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({files, message}),
+    });
   }catch(netErr){
-    console.error(`[publicar] rede falhou em "${label}" (${url}):`, netErr);
-    throw new Error(`Rede falhou em "${label}" — ${netErr.message}. Provável payload grande demais ou bloqueio de rede/extensão.`);
+    throw new Error(`Rede falhou ao publicar — ${netErr.message}.`);
   }
-  if(!res.ok){ const t=await res.text(); console.error(`[publicar] HTTP ${res.status} em "${label}":`, t.slice(0,300)); throw new Error(`HTTP ${res.status} em "${label}" — ${t.slice(0,200)}`); }
-  return res.json();
-}
-/* Contents API (PUT) rejeita arquivos acima de ~1MB; orders.json/report.json podem passar
-   disso facilmente, então publicamos via Git Data API (blob→tree→commit→ref), que não tem
-   esse limite e deixa todos os arquivos numa única commit. */
-async function githubPublishFiles(owner, repo, branch, token, files, message){
-  const base=`https://api.github.com/repos/${owner}/${repo}`;
-  const refData=await githubApiFetch(`${base}/git/refs/heads/${encodeURIComponent(branch)}`, token, null, 'GET ref');
-  const parentCommitSha=refData.object.sha;
-  const parentCommit=await githubApiFetch(`${base}/git/commits/${parentCommitSha}`, token, null, 'GET commit pai');
-  const baseTreeSha=parentCommit.tree.sha;
-  const treeEntries=[];
-  for(const f of files){
-    const b64=f.contentB64!=null?f.contentB64:btoa(unescape(encodeURIComponent(JSON.stringify(f.contentObj))));
-    const blob=await githubApiFetch(`${base}/git/blobs`, token, {
-      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content:b64, encoding:'base64'}),
-    }, `POST blob ${f.path}`);
-    treeEntries.push({path:f.path, mode:'100644', type:'blob', sha:blob.sha});
-  }
-  const newTree=await githubApiFetch(`${base}/git/trees`, token, {
-    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_tree:baseTreeSha, tree:treeEntries}),
-  }, 'POST tree');
-  const newCommit=await githubApiFetch(`${base}/git/commits`, token, {
-    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message, tree:newTree.sha, parents:[parentCommitSha]}),
-  }, 'POST commit');
-  await githubApiFetch(`${base}/git/refs/heads/${encodeURIComponent(branch)}`, token, {
-    method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({sha:newCommit.sha}),
-  }, 'PATCH ref');
+  let data=null; try{ data=await res.json(); }catch(e){}
+  if(!res.ok||!data||!data.ok){ throw new Error((data&&data.error)||`HTTP ${res.status} ao publicar`); }
+  return data;
 }
 function showToast(message, type){
   const el=document.createElement('div');
@@ -767,10 +704,15 @@ function showToast(message, type){
   setTimeout(()=>{ el.classList.remove('show'); setTimeout(()=>el.remove(),300); },5000);
 }
 
-const ghToken=()=>{ try{ return localStorage.getItem(LS_KEYS.ghToken)||''; }catch(e){ return ''; } };
-function updatePublishBtn(){
-  const b=$('#btnPublish');
-  if(b) b.textContent=ghToken()?'Publicar no GitHub':'Publicar (snapshot)';
+function objToBase64(obj){ return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); }
+/* Publicar exige um nome (para saber quem publicou); se o campo "Seu nome" estiver
+   vazio, pede uma vez e já preenche o campo do cabeçalho. */
+function ensureMyName(){
+  let name=myName();
+  if(name) return name;
+  name=(prompt('Seu nome, para identificar quem publicou:')||'').trim();
+  if(name) $('#myName').value=name;
+  return name;
 }
 
 async function publishSnapshot(){
@@ -778,33 +720,27 @@ async function publishSnapshot(){
     showToast('Carregue os dados primeiro em "Atualizar dados".', 'error');
     return;
   }
-  const token=ghToken();
+  const name=ensureMyName();
+  if(!name){ showToast('Informe seu nome para publicar.', 'error'); return; }
   const btn=$('#btnPublish'); btn.disabled=true; const prevLabel=btn.textContent;
-  btn.textContent=token?'Publicando…':'Compactando…';
+  btn.textContent='Compactando…';
   try{
     const ordersGz=await gzipStringToBytes(JSON.stringify(state.orders));
     const reportGz=await gzipStringToBytes(JSON.stringify(state.report));
-    const meta={updatedAt:new Date().toISOString(), updatedBy:myName()||null};
-    if(!token){
-      downloadBytes('orders.json.gz', ordersGz, 'application/gzip');
-      downloadBytes('report.json.gz', reportGz, 'application/gzip');
-      downloadJson('meta.json', meta);
-      showToast('Arquivos .gz baixados — suba em data/ do repositório. Dica: configure o token (⚙️) para publicar direto.');
-      return;
-    }
-    await githubPublishFiles(GH_OWNER, GH_REPO, GH_BRANCH, token, [
+    const meta={updatedAt:new Date().toISOString(), updatedBy:name};
+    btn.textContent='Publicando…';
+    await publishFiles([
       {path:'data/orders.json.gz', contentB64: bytesToBase64(ordersGz)},
       {path:'data/report.json.gz', contentB64: bytesToBase64(reportGz)},
-      {path:'data/meta.json', contentObj: meta},
-    ], 'Atualiza dados do painel Dark Store (orders, report)');
+      {path:'data/meta.json', contentB64: objToBase64(meta)},
+    ], 'Atualiza dados do painel Dark Store (orders, report) — por '+name);
     clearPendingLocalStorage();
     META.updatedAt=meta.updatedAt; META.updatedBy=meta.updatedBy; setStatus();
-    showToast('Publicado no GitHub! O site atualiza para todos em alguns minutos.');
+    showToast('Publicado! O site atualiza para todos em alguns minutos.');
   }catch(err){
-    const msg=/HTTP 401/.test(err.message)?'Token inválido ou expirado — abra ⚙️ e cole um token novo.':err.message;
-    showToast('Falha ao publicar: '+msg, 'error');
+    showToast('Falha ao publicar: '+err.message, 'error');
   }finally{
-    btn.disabled=false; btn.textContent=prevLabel; updatePublishBtn();
+    btn.disabled=false; btn.textContent=prevLabel;
   }
 }
 
@@ -823,18 +759,11 @@ async function fetchDiagFresh(){ return fetchJsonSafe('data/diagnostico.json?t='
 
 function scheduleDiagSave(){
   persistDiagLocal();
-  if(!ghToken()){
-    $('#saveState').textContent='(configure o token ⚙️ para sincronizar com todos)';
-    $('#saveState').className='savestate saving';
-    return;
-  }
   $('#saveState').textContent='salvando…'; $('#saveState').className='savestate saving';
   if(saveTimer) clearTimeout(saveTimer);
   saveTimer=setTimeout(publishDiag, 2500);
 }
 async function publishDiag(){
-  const token=ghToken();
-  if(!token) return;
   try{
     // mescla com o que outros usuários publicaram nesse meio tempo, por timestamp
     const remote=(await fetchDiagFresh())||{};
@@ -843,8 +772,8 @@ async function publishDiag(){
       if(!rn||(n.ts&&(!rn.ts||n.ts>rn.ts))) remote[p]=n;
     }
     DIAG=remote;
-    await githubPublishFiles(GH_OWNER, GH_REPO, GH_BRANCH, token, [
-      {path:'data/diagnostico.json', contentObj: DIAG},
+    await publishFiles([
+      {path:'data/diagnostico.json', contentB64: objToBase64(DIAG)},
     ], 'Atualiza diagnóstico de atrasos — Dark Store');
     try{ localStorage.removeItem(LS_KEYS.pendingDiag); }catch(e){}
     $('#saveState').textContent='✓ salvo para todos'; $('#saveState').className='savestate saved';
@@ -865,27 +794,6 @@ function startPolling(){
   }, 45000);
 }
 
-/* =====================================================================
-   TOKEN — diálogo de configuração
-===================================================================== */
-const dlgConfig=$('#dlgConfig');
-dlgConfig.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>dlgConfig.close());
-$('#btnConfig').onclick=()=>{ $('#cfgToken').value=ghToken(); dlgConfig.showModal(); };
-$('#btnSaveToken').onclick=()=>{
-  const v=$('#cfgToken').value.trim();
-  if(!v){ showToast('Cole um token válido.', 'error'); return; }
-  localStorage.setItem(LS_KEYS.ghToken, v);
-  updatePublishBtn(); dlgConfig.close();
-  showToast('Token salvo neste navegador. Publicar agora vai direto pro GitHub.');
-};
-$('#btnRemoveToken').onclick=()=>{
-  if(!ghToken()){ showToast('Nenhum token salvo.', 'error'); return; }
-  if(!confirm('Remover o token salvo neste navegador? Você volta a precisar baixar e subir os arquivos manualmente. Isso não revoga o token no GitHub — para revogar de vez, apague-o em github.com/settings/tokens.')) return;
-  localStorage.removeItem(LS_KEYS.ghToken);
-  $('#cfgToken').value='';
-  updatePublishBtn(); dlgConfig.close();
-  showToast('Token removido deste navegador.');
-};
 $('#btnPublish').onclick=publishSnapshot;
 
 /* =====================================================================
@@ -982,7 +890,6 @@ function show(view){
   $('#btnPng').disabled=view!=='dash';
 }
 async function boot(){
-  updatePublishBtn();
   show('loading');
   const [pubOrders, pubReport, pubMeta, pubDiag] = await Promise.all([
     fetchDataFile('data/orders.json'), fetchDataFile('data/report.json'),
