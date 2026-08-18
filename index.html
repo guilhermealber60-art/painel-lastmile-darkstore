@@ -116,6 +116,12 @@
   .diag .autor{font-size:11px;color:var(--muted);font-weight:700;white-space:nowrap}
   .savestate{font-size:12px;font-weight:800;margin-left:auto}
   .savestate.saving{color:#ffd34d}.savestate.saved{color:#bff3cf}
+  tr.row-desc td{color:var(--red)!important}
+  .descmark{color:var(--red);font-weight:800;font-size:11.5px;display:block;margin-bottom:4px;line-height:1.4}
+  .btn-mini{font-family:inherit;font-size:11px;font-weight:800;border:1px solid var(--line);background:#f7f8fc;border-radius:7px;padding:5px 8px;cursor:pointer;color:var(--navy);white-space:nowrap}
+  .btn-mini:hover{background:#e7ecfb}
+  .btn-mini-danger{background:var(--red-soft);color:var(--red);border-color:var(--red-soft)}
+  .btn-mini-danger:hover{filter:brightness(.95)}
 
   footer{max-width:1420px;margin:0 auto;padding:0 24px 40px;color:var(--muted);font-size:12px;font-weight:600;display:none}
   @media(prefers-reduced-motion:reduce){.btn{transition:none}}
@@ -367,7 +373,7 @@ const LS_KEYS = {
 };
 
 const state = { orders:[], report:[] }; // acumulados (mergeados por chave) — ver pickOrderRows/pickReportRows
-let BASE=[], FILTERED=[], charts={}, META={ref:null,updatedAt:null,updatedBy:null};
+let BASE=[], FILTERED=[], FILTERED_ATRASOS=[], charts={}, META={ref:null,updatedAt:null,updatedBy:null};
 let SEMANA_CHART_WEEK=null; // semana escolhida no seletor do gráfico "Evolução semanal" (null = semana vigente)
 let DIAG={};           // pedido -> {motivo,plano,autor,ts}
 let pollTimer=null, saveTimer=null;
@@ -807,6 +813,10 @@ async function publishSnapshot(){
    mesclado por timestamp antes de cada publicação e recarregado por polling
    para refletir edições de outras pessoas.
 ===================================================================== */
+/* Pedido "desconsiderado" (ex.: erro/edge case pontual): fica marcado no próprio DIAG
+   (mesmo objeto colaborativo de motivo/plano), some dos indicadores (KPIs, tabelas,
+   gráficos), mas continua visível — em vermelho — na tabela de Diagnóstico, para auditoria. */
+function isDesconsiderado(pedido){ const n=DIAG[pedido]; return !!(n&&n.desconsiderado); }
 function persistDiagLocal(){ try{ localStorage.setItem(LS_KEYS.pendingDiag, JSON.stringify(DIAG)); }catch(e){} }
 function restoreDiagLocal(){ try{ const d=localStorage.getItem(LS_KEYS.pendingDiag); if(d) return JSON.parse(d); }catch(e){} return null; }
 async function fetchDiagFresh(){ return fetchJsonSafe('data/diagnostico.json?t='+Date.now()); }
@@ -1001,20 +1011,25 @@ async function boot(){
    RENDER (idêntico às regras do painel original)
 ===================================================================== */
 function render(){
-  FILTERED=BASE.filter(r=>
+  const filteredAll=BASE.filter(r=>
     (MS.data.size===0||MS.data.has(rowDateKey(r))) &&
     (MS.semana.size===0||MS.semana.has(rowWeekKey(r))) &&
     (MS.turno.size===0||MS.turno.has(r.turno)) &&
     (MS.mod.size===0||MS.mod.has(r.modalidade)) &&
     (MS.plat.size===0||MS.plat.has(r.plataforma))
   );
+  // Pedidos marcados como "desconsiderado" no diagnóstico saem de todos os indicadores
+  // (KPIs, tabelas, gráficos), mas continuam disponíveis para a tabela de Diagnóstico.
+  FILTERED=filteredAll.filter(r=>!isDesconsiderado(r.pedido));
+  FILTERED_ATRASOS=filteredAll.filter(r=>r.otd==='Atraso');
+  const descCount=filteredAll.length-FILTERED.length;
   const parts=[];
   parts.push(MS.data.size? MS.data.size+' dia(s)':'mês inteiro');
   if(MS.semana.size) parts.push(MS.semana.size+' semana(s)');
   if(MS.turno.size) parts.push(MS.turno.size+' turno(s)');
   if(MS.mod.size) parts.push(MS.mod.size+' modalidade(s)');
   if(MS.plat.size) parts.push(MS.plat.size+' plataforma(s)');
-  $('#rowCount').textContent=FILTERED.length+' de '+BASE.length+' pedidos • '+parts.join(' • ');
+  $('#rowCount').textContent=FILTERED.length+' de '+BASE.length+' pedidos • '+parts.join(' • ')+(descCount?' • '+descCount+' desconsiderado(s)':'');
   const total=FILTERED.length;
   const noPrazo=FILTERED.filter(r=>r.otd==='No prazo').length;
   const atrasos=FILTERED.filter(r=>r.otd==='Atraso').length;
@@ -1072,19 +1087,26 @@ function renderTurno(){
 }
 
 const MOTIVOS=['Atraso na separação','Alto volume de pedidos','Equipe reduzida','Falha operacional','Pedido não localizado','Divergência de estoque','Aguardando farmacêutico','Erro na finalização do pedido','Pedido não finalizado na plataforma','Condições climáticas','Demora coleta','Sistema'];
+function desconsiderarCell(pedido,n){
+  if(n.desconsiderado){
+    return `<span class="descmark">⛔ Desconsiderado: ${esc(n.motivoDesc||'')}</span><button type="button" class="btn-mini" data-p="${esc(pedido)}" data-act="reconsiderar">↩ Reconsiderar</button>`;
+  }
+  return `<button type="button" class="btn-mini btn-mini-danger" data-p="${esc(pedido)}" data-act="desconsiderar">Desconsiderar pedido</button>`;
+}
 function renderAtrasos(){
-  const rs=FILTERED.filter(r=>r.otd==='Atraso');
+  const rs=FILTERED_ATRASOS;
   const motivoSel=(pedido,val)=>`<select data-p="${esc(pedido)}" data-f="motivo"><option value="">— selecione —</option>`+
     MOTIVOS.map(m=>`<option${m===val?' selected':''}>${m}</option>`).join('')+`</select>`;
-  $('#tblAtrasos').innerHTML=`<thead><tr><th>Data</th><th>Pedido</th><th>Turno</th><th>Modalidade</th><th>Plataforma</th><th>Entregue por</th><th class="num">Separação</th><th class="num">Ag. coleta</th><th class="num">Entrega</th><th>Motivo do atraso</th><th>Plano de ação</th><th>Preenchido por</th></tr></thead><tbody>`+
+  $('#tblAtrasos').innerHTML=`<thead><tr><th>Data</th><th>Pedido</th><th>Turno</th><th>Modalidade</th><th>Plataforma</th><th>Entregue por</th><th class="num">Separação</th><th class="num">Ag. coleta</th><th class="num">Entrega</th><th>Motivo do atraso</th><th>Plano de ação</th><th>Preenchido por</th><th>Desconsiderar</th></tr></thead><tbody>`+
     (rs.length? rs.map(r=>{
       const n=DIAG[r.pedido]||{};
-      return `<tr><td>${rowDateLabel(r)}</td><td>${esc(r.pedido)}</td><td>${esc(r.turno)}</td><td>${esc(r.modalidade)}</td><td>${esc(r.plataforma)}</td><td>${esc(r.entreguePor)}</td>
+      return `<tr class="${n.desconsiderado?'row-desc':''}"><td>${rowDateLabel(r)}</td><td>${esc(r.pedido)}</td><td>${esc(r.turno)}</td><td>${esc(r.modalidade)}</td><td>${esc(r.plataforma)}</td><td>${esc(r.entreguePor)}</td>
       <td class="num">${fmtDur(r.sep)}</td><td class="num">${fmtDur(r.aguard)}</td><td class="num">${fmtDur(r.tEnt)}</td>
       <td>${motivoSel(r.pedido,n.motivo||'')}</td>
       <td><input data-p="${esc(r.pedido)}" data-f="plano" value="${esc(n.plano||'')}" placeholder="ação combinada"></td>
-      <td class="autor">${esc(n.autor||'')}</td></tr>`;
-    }).join('') : `<tr><td colspan="12" style="text-align:center;color:var(--muted)">Nenhum pedido em atraso com os filtros atuais 🎉</td></tr>`)+`</tbody>`;
+      <td class="autor">${esc(n.autor||'')}</td>
+      <td>${desconsiderarCell(r.pedido,n)}</td></tr>`;
+    }).join('') : `<tr><td colspan="13" style="text-align:center;color:var(--muted)">Nenhum pedido em atraso com os filtros atuais 🎉</td></tr>`)+`</tbody>`;
   $('#tblAtrasos').querySelectorAll('input,select').forEach(inp=>{
     inp.addEventListener(inp.tagName==='SELECT'?'change':'input',e=>{
       const p=e.target.dataset.p;
@@ -1096,6 +1118,32 @@ function renderAtrasos(){
     });
   });
 }
+$('#tblAtrasos').addEventListener('click',e=>{
+  const btn=e.target.closest('button[data-act]');
+  if(!btn) return;
+  const p=btn.dataset.p;
+  if(btn.dataset.act==='desconsiderar'){
+    const motivo=prompt('Motivo para desconsiderar o pedido '+p+' dos indicadores:');
+    if(motivo===null) return;
+    if(!motivo.trim()){ showToast('Informe um motivo para desconsiderar o pedido.','error'); return; }
+    DIAG[p]=DIAG[p]||{};
+    DIAG[p].desconsiderado=true;
+    DIAG[p].motivoDesc=motivo.trim();
+    DIAG[p].autor=myName()||DIAG[p].autor||'';
+    DIAG[p].ts=new Date().toISOString();
+    scheduleDiagSave();
+    render();
+  } else if(btn.dataset.act==='reconsiderar'){
+    if(!confirm('Voltar a considerar o pedido '+p+' nos indicadores?')) return;
+    DIAG[p]=DIAG[p]||{};
+    DIAG[p].desconsiderado=false;
+    DIAG[p].motivoDesc='';
+    DIAG[p].autor=myName()||DIAG[p].autor||'';
+    DIAG[p].ts=new Date().toISOString();
+    scheduleDiagSave();
+    render();
+  }
+});
 function renderBase(){
   const pillCls={'No prazo':'prazo','Atraso':'atraso','Insucesso':'insu','Em rota':'rota'};
   $('#tblBase').innerHTML=`<thead><tr><th>Data</th><th>Pedido</th><th>Turno</th><th>Modalidade</th><th>Plataforma</th><th>Entregue por</th><th>Criado Orders</th><th>Criado Report</th><th>Coletado</th><th>Entrega</th><th>Prazo</th><th class="num">Separação</th><th class="num">Ag. coleta</th><th class="num">T. entrega</th><th>OTD</th></tr></thead><tbody>`+
@@ -1172,7 +1220,8 @@ function drawSemana(){
   const rows=BASE.filter(r=>
     (MS.turno.size===0||MS.turno.has(r.turno)) &&
     (MS.mod.size===0||MS.mod.has(r.modalidade)) &&
-    (MS.plat.size===0||MS.plat.has(r.plataforma))
+    (MS.plat.size===0||MS.plat.has(r.plataforma)) &&
+    !isDesconsiderado(r.pedido)
   );
   const isEntregaRapidaUber=r=>/entrega r[aá]pida/i.test(r.modalidade)&&!/(s[aã]o\s*jo[aã]o|controlados)/i.test(r.modalidade);
   const byDay=selectedWeekDays().map((d,i)=>{
@@ -1263,13 +1312,13 @@ function exportXlsx(){
 function exportDiag(){
   const durX=ms=>ms==null?'':fmtDur(ms);
   const wb=XLSX.utils.book_new();
-  const atr=[['Data','Pedido','Turno','Modalidade','Plataforma de entrega','Entregue por','Separação','Aguardando coleta','Entrega','Motivo do atraso','Plano de ação','Preenchido por']];
-  FILTERED.filter(r=>r.otd==='Atraso').forEach(r=>{
+  const atr=[['Data','Pedido','Turno','Modalidade','Plataforma de entrega','Entregue por','Separação','Aguardando coleta','Entrega','Motivo do atraso','Plano de ação','Preenchido por','Desconsiderado','Motivo da desconsideração']];
+  FILTERED_ATRASOS.forEach(r=>{
     const n=DIAG[r.pedido]||{};
-    atr.push([rowDateLabel(r),r.pedido,r.turno,r.modalidade,r.plataforma,r.entreguePor,durX(r.sep),durX(r.aguard),durX(r.tEnt),n.motivo||'',n.plano||'',n.autor||'']);
+    atr.push([rowDateLabel(r),r.pedido,r.turno,r.modalidade,r.plataforma,r.entreguePor,durX(r.sep),durX(r.aguard),durX(r.tEnt),n.motivo||'',n.plano||'',n.autor||'',n.desconsiderado?'Sim':'Não',n.motivoDesc||'']);
   });
   const ws=XLSX.utils.aoa_to_sheet(atr);
-  ws['!cols']=[{wch:10},{wch:18},{wch:9},{wch:28},{wch:20},{wch:24},{wch:11},{wch:16},{wch:11},{wch:32},{wch:32},{wch:18}];
+  ws['!cols']=[{wch:10},{wch:18},{wch:9},{wch:28},{wch:20},{wch:24},{wch:11},{wch:16},{wch:11},{wch:32},{wch:32},{wch:18},{wch:14},{wch:32}];
   XLSX.utils.book_append_sheet(wb,ws,'Diagnóstico Atrasos');
   XLSX.writeFile(wb,'Diagnostico_Atrasos_Dark_Store_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
