@@ -88,6 +88,8 @@
   .card .head{background:var(--navy);color:#fff;font-weight:900;font-size:14px;text-transform:uppercase;letter-spacing:.4px;padding:11px 18px;display:flex;align-items:center;gap:10px}
   .card .head.gold{background:var(--gold)} .card .head.green{background:var(--green)} .card .head.red{background:var(--red)}
   .head-select{margin-left:auto;font-family:inherit;font-weight:800;font-size:12px;color:var(--navy);background:#fff;border:none;border-radius:8px;padding:6px 10px;cursor:pointer;max-width:220px}
+  .head-search{margin-left:auto;font-family:inherit;font-weight:700;font-size:12px;color:var(--ink);background:#fff;border:none;border-radius:8px;padding:6px 10px;width:200px}
+  .head-search::placeholder{color:var(--muted);font-weight:600}
   .card .body{padding:16px 18px}
   .chartwrap{position:relative;height:280px}
 
@@ -263,12 +265,14 @@
   </div>
 
   <div class="card">
-    <div class="head">Base de pedidos (calculada)</div>
+    <div class="head">Base de pedidos (calculada)
+      <input type="text" id="baseSearch" class="head-search" placeholder="🔎 Buscar pedido…">
+    </div>
     <div class="body tbl-scroll"><table id="tblBase"></table></div>
   </div>
 </main>
 
-<footer id="foot">Meta de NS da rede: 95% &bull; Meta de separação: 15 min &bull; Coleta via eventos DISPATCHED (SAOJOAO-GO) e IN_TRANSIT (Uber/99), lidos direto das colunas de evento do Orders (Abbiamo) &bull; SLA = No prazo ÷ Entregues &bull; DS = Entregues ÷ (Entregues + Insucessos) &bull; O gráfico de evolução semanal usa filtro de semana próprio (seletor no card, por padrão a semana vigente, segunda a domingo) e a barra de separação mostra apenas Entrega Rápida (Uber), independente do filtro de Data/Semana geral &bull; Diagnósticos publicados no GitHub e sincronizados entre todos os usuários a cada atualização &bull; Filtros aceitam múltiplas seleções simultâneas &bull; O dia do pedido (filtros de Data e Semana, e as colunas "Data") considera a data de criação no Orders (Abbiamo) — pedidos com data diferente no Report (VTEX) aparecem no dia do Orders &bull; Bases: Orders (Abbiamo) e Report (VTEX), acumuladas ao longo do mês a cada "Atualizar dados" + "Publicar"</footer>
+<footer id="foot">Meta de NS da rede: 95% &bull; Meta de separação: 15 min &bull; Coleta via eventos DISPATCHED (SAOJOAO-GO) e IN_TRANSIT (Uber/99), lidos direto das colunas de evento do Orders (Abbiamo) &bull; SLA = No prazo ÷ Entregues &bull; DS = Entregues ÷ (Entregues + Insucessos) &bull; Separação da Entrega Rápida (KPIs e gráfico de evolução semanal) considera só pedidos finalizados (No prazo, Atraso ou Insucesso) — pedidos "Em rota" ficam de fora até terem um desfecho &bull; O gráfico de evolução semanal usa filtro de semana próprio (seletor no card, por padrão a semana vigente, segunda a domingo) e a barra de separação mostra apenas Entrega Rápida (Uber), independente do filtro de Data/Semana geral &bull; Diagnósticos publicados no GitHub e sincronizados entre todos os usuários a cada atualização &bull; Filtros aceitam múltiplas seleções simultâneas &bull; O dia do pedido (filtros de Data e Semana, e as colunas "Data") considera a data de criação no Orders (Abbiamo) — pedidos com data diferente no Report (VTEX) aparecem no dia do Orders &bull; Bases: Orders (Abbiamo) e Report (VTEX), acumuladas ao longo do mês a cada "Atualizar dados" + "Publicar"</footer>
 
 <dialog id="dlgUpdate">
   <div class="dlg-head"><h3>Atualizar dados — Dark Store</h3><button data-close>×</button></div>
@@ -494,6 +498,11 @@ function pct(n,d){ return d>0?Math.round(100*n/d)+'%':'—'; }
 function pctNum(n,d){ return d>0?100*n/d:null; }
 function nsClass(p){ return p==null?'':(p>=95?'g':(p>=70?'y':'r')); }
 function avg(arr){ const v=arr.filter(x=>x!=null&&!isNaN(x)&&x>=0); return v.length? v.reduce((a,b)=>a+b,0)/v.length:null; }
+/* Pedido finalizado = já teve um desfecho (entregue no prazo, em atraso, ou insucesso).
+   "Em rota" fica de fora das médias de separação da Entrega Rápida — enquanto o pedido
+   ainda está em andamento, um timestamp de coleta parado/travado infla a média sem
+   representar um tempo de separação real. */
+function isFinalizado(r){ return r.otd==='No prazo'||r.otd==='Atraso'||r.otd==='Insucesso'; }
 function esc(s){ return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 /* As datas do Orders/Report vêm em formatos mistos: dd/mm/yyyy hh:mm (BR) e
    yyyy-mm-dd hh:mm:ss (ISO), como texto (CSV) — ou já como Date/serial quando o
@@ -947,8 +956,8 @@ function render(){
   const entregues=noPrazo+atrasos;
   const sla=pctNum(noPrazo,entregues);
   const ds=pctNum(entregues,entregues+insuc);
-  const sepRapidaUber=avg(FILTERED.filter(r=>/entrega r[aá]pida/i.test(r.modalidade)&&!/(s[aã]o\s*jo[aã]o|controlados)/i.test(r.modalidade)).map(r=>r.sep));
-  const sepRapidaSJ=avg(FILTERED.filter(r=>/entrega r[aá]pida/i.test(r.modalidade)&&/(s[aã]o\s*jo[aã]o|controlados)/i.test(r.modalidade)).map(r=>r.sep));
+  const sepRapidaUber=avg(FILTERED.filter(r=>isFinalizado(r)&&/entrega r[aá]pida/i.test(r.modalidade)&&!/(s[aã]o\s*jo[aã]o|controlados)/i.test(r.modalidade)).map(r=>r.sep));
+  const sepRapidaSJ=avg(FILTERED.filter(r=>isFinalizado(r)&&/entrega r[aá]pida/i.test(r.modalidade)&&/(s[aã]o\s*jo[aã]o|controlados)/i.test(r.modalidade)).map(r=>r.sep));
   const kpi=(lbl,val,sub,cls='')=>`<div class="kpi ${cls}"><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="sub">${sub||''}</div></div>`;
   $('#kpis').innerHTML=
     kpi('Pedidos',total,'criados no Orders (Abbiamo)')+
@@ -1055,10 +1064,13 @@ function onDesconsiderarClick(e){
 }
 $('#tblAtrasos').addEventListener('click',onDesconsiderarClick);
 $('#tblBase').addEventListener('click',onDesconsiderarClick);
+let BASE_SEARCH='';
 function renderBase(){
   const pillCls={'No prazo':'prazo','Atraso':'atraso','Insucesso':'insu','Em rota':'rota'};
+  const q=BASE_SEARCH.trim().toLowerCase();
+  const rows=q? FILTERED_ALL.filter(r=>r.pedido.toLowerCase().includes(q)) : FILTERED_ALL;
   $('#tblBase').innerHTML=`<thead><tr><th>Data</th><th>Pedido</th><th>Turno</th><th>Modalidade</th><th>Plataforma</th><th>Entregue por</th><th>Criado Orders</th><th>Criado Report</th><th>Coletado</th><th>Entrega</th><th>Prazo</th><th class="num">Separação</th><th class="num">Ag. coleta</th><th class="num">T. entrega</th><th>OTD</th><th>Desconsiderar</th></tr></thead><tbody>`+
-    FILTERED_ALL.map(r=>{
+    (rows.length? rows.map(r=>{
       const n=DIAG[r.pedido]||{};
       return `<tr class="${n.desconsiderado?'row-desc':''}"><td>${rowDateLabel(r)}</td><td>${esc(r.pedido)}</td><td>${esc(r.turno)}</td><td>${esc(r.modalidade)}</td><td>${esc(r.plataforma)}</td><td>${esc(r.entreguePor)}</td>
     <td>${fmtDT(r.criadoAbb)}</td><td>${fmtDT(r.criadoVtex)}</td><td>${r.sedex?'Sedex':(r.coletado?fmtDT(r.coletado):'Não coletado')}</td>
@@ -1066,7 +1078,7 @@ function renderBase(){
     <td class="num">${fmtDur(r.sep)}</td><td class="num">${fmtDur(r.aguard)}</td><td class="num">${fmtDur(r.tEnt)}</td>
     <td><span class="pill ${pillCls[r.otd]||''}">${r.otd}</span></td>
     <td>${desconsiderarCell(r.pedido,n)}</td></tr>`;
-    }).join('')+`</tbody>`;
+    }).join('') : `<tr><td colspan="16" style="text-align:center;color:var(--muted)">Nenhum pedido encontrado para "${esc(BASE_SEARCH)}"</td></tr>`)+`</tbody>`;
 }
 
 /* ---------- gráficos ---------- */
@@ -1144,7 +1156,7 @@ function drawSemana(){
     const rs=rows.filter(r=>rowDateKey(r)===key);
     const np=rs.filter(r=>r.otd==='No prazo').length;
     const at=rs.filter(r=>r.otd==='Atraso').length;
-    const rsUber=rs.filter(isEntregaRapidaUber);
+    const rsUber=rs.filter(r=>isFinalizado(r)&&isEntregaRapidaUber(r));
     return {
       label:dayNames[i]+' '+String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'),
       sla:pctNum(np,np+at),
@@ -1198,8 +1210,8 @@ function exportXlsx(){
   const dtX=d=>d?fmtDT(d):'';
   const total=FILTERED.length,np=FILTERED.filter(r=>r.otd==='No prazo').length,at=FILTERED.filter(r=>r.otd==='Atraso').length,ins=FILTERED.filter(r=>r.otd==='Insucesso').length,rota=FILTERED.filter(r=>r.otd==='Em rota').length;
   const ent=np+at;
-  const sepUber=avg(FILTERED.filter(r=>/entrega r[aá]pida/i.test(r.modalidade)&&!/(s[aã]o\s*jo[aã]o|controlados)/i.test(r.modalidade)).map(r=>r.sep));
-  const sepSJ=avg(FILTERED.filter(r=>/entrega r[aá]pida/i.test(r.modalidade)&&/(s[aã]o\s*jo[aã]o|controlados)/i.test(r.modalidade)).map(r=>r.sep));
+  const sepUber=avg(FILTERED.filter(r=>isFinalizado(r)&&/entrega r[aá]pida/i.test(r.modalidade)&&!/(s[aã]o\s*jo[aã]o|controlados)/i.test(r.modalidade)).map(r=>r.sep));
+  const sepSJ=avg(FILTERED.filter(r=>isFinalizado(r)&&/entrega r[aá]pida/i.test(r.modalidade)&&/(s[aã]o\s*jo[aã]o|controlados)/i.test(r.modalidade)).map(r=>r.sep));
   const resumo=[['Acompanhamento Dark Store — '+($('#daypill').textContent)+' — '+($('#rowCount').textContent)],[],
     ['Pedidos','Entregues','No prazo','Atrasos','Insucessos','Em rota','SLA','DS','Média separação (Entrega Rápida)','Média separação (Rápida São João)'],
     [total,ent,np,at,ins,rota,pct(np,ent),pct(ent,ent+ins),durX(sepUber),durX(sepSJ)],[],
@@ -1254,6 +1266,7 @@ $('#btnDiag').addEventListener('click',exportDiag);
 $('#btnPng').addEventListener('click',exportPng);
 initFilterDropdowns();
 $('#chSemanaWeekSel').addEventListener('change',e=>{ SEMANA_CHART_WEEK=e.target.value||null; drawSemana(); });
+$('#baseSearch').addEventListener('input',e=>{ BASE_SEARCH=e.target.value; renderBase(); });
 
 boot();
 </script>
